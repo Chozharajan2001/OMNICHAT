@@ -1,7 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  output: "standalone",
+  images: {
+    unoptimized: true, // Required for Tauri desktop app
+  },
 };
 
 export default nextConfig;
