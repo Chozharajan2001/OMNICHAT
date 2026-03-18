@@ -6,6 +6,7 @@
 
 import { streamText } from "ai";
 import { NextResponse } from "next/server";
+import { ZodError } from "zod";
 import { getServerSession } from "@/lib/auth/session";
 import { getDecryptedKey } from "@/lib/db/queries/api-keys";
 import {
@@ -55,7 +56,16 @@ export async function POST(req: Request) {
         }
 
         // 2. Parse and validate request
-        const body = await req.json();
+        let body: unknown;
+        try {
+            body = await req.json();
+        } catch {
+            return NextResponse.json(
+                { error: "Invalid JSON in request body" },
+                { status: 400 }
+            );
+        }
+        
         const {
             messages,
             providerId,
@@ -120,6 +130,14 @@ export async function POST(req: Request) {
 
         // 8. Get the user message (last one in the input)
         const userMessage = messages[messages.length - 1];
+        
+        // Safety check for empty messages array
+        if (!userMessage) {
+            return NextResponse.json(
+                { error: "No message provided" },
+                { status: 400 }
+            );
+        }
 
         // 9. Stream response
         const result = streamText({
@@ -131,20 +149,20 @@ export async function POST(req: Request) {
 
             // Called when streaming completes successfully
             onFinish: async ({ text, usage }) => {
-                if (privateMode) {
+                if (privateMode || !conversationId) {
                     return;
                 }
 
                 try {
                     // Save user message
-                    await addMessage(conversationId!, "user", userMessage.content, {
+                    await addMessage(conversationId, "user", userMessage.content, {
                         modelId,
                         providerId,
                         tokenCount: usage?.totalTokens,
                     });
 
                     // Save assistant message
-                    await addMessage(conversationId!, "assistant", text, {
+                    await addMessage(conversationId, "assistant", text, {
                         modelId,
                         providerId,
                         tokenCount: usage?.totalTokens,
@@ -153,11 +171,11 @@ export async function POST(req: Request) {
                     // Update conversation title if it's a new conversation
                     if (history.length === 0) {
                         const title = generateTitleFromMessage(userMessage.content);
-                        await updateConversation(conversationId!, userId, { title });
+                        await updateConversation(conversationId, userId, { title });
                     }
 
                     // Update conversation timestamp
-                    await updateConversation(conversationId!, userId, {});
+                    await updateConversation(conversationId, userId, {});
                 } catch (error) {
                     console.error("Failed to save messages:", error);
                 }
@@ -180,10 +198,9 @@ export async function POST(req: Request) {
     } catch (error: unknown) {
         console.error("Chat API error:", error);
 
-        if (error instanceof Error && error.name === "ZodError") {
-            const zodError = error as import('zod').ZodError;
+        if (error instanceof ZodError) {
             return NextResponse.json(
-                { error: "Invalid request", details: zodError.issues },
+                { error: "Invalid request", details: error.issues },
                 { status: 400 }
             );
         }

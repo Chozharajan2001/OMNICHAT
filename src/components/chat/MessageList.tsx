@@ -91,12 +91,17 @@ export function MessageList({ messages, isLoading, isInitialLoading, showTokenCo
     return (
         <ScrollArea
             className="h-full rounded-[2rem] border border-border/60 bg-background/20"
-            ref={scrollRef}
         >
-            <div className={chatDensity === "compact" ? "flex flex-col py-3" : "flex flex-col py-4"}>
+            <div 
+                ref={scrollRef}
+                role="log"
+                aria-live="polite"
+                aria-label="Chat messages"
+                className={chatDensity === "compact" ? "flex flex-col py-3" : "flex flex-col py-4"}
+            >
                 {messages.map((message, index) => (
                     <MessageBubble
-                        key={message.id || index}
+                        key={message.id || `msg-${index}`}
                         role={message.role}
                         content={message.content}
                         tokenCount={message.tokenCount}

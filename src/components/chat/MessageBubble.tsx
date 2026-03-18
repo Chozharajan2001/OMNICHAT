@@ -74,6 +74,7 @@ export function MessageBubble({
                         isCompact ? "h-9 w-9" : "h-10 w-10",
                         isUser ? "bg-primary text-primary-foreground" : "bg-primary/12"
                     )}
+                    aria-hidden="true"
                 >
                     {isUser ? (
                         <User className="h-4 w-4" />
@@ -93,6 +94,7 @@ export function MessageBubble({
                             className="h-8 rounded-full border border-border/70 bg-background/30 px-3 text-xs"
                             onClick={handleCopy}
                             disabled={!content}
+                            aria-label={copied ? "Message copied" : "Copy message to clipboard"}
                         >
                             {copied ? (
                                 <>
@@ -111,6 +113,7 @@ export function MessageBubble({
                     <div className="prose prose-sm dark:prose-invert max-w-none overflow-hidden">
                         {content ? (
                             <ReactMarkdown
+                                disallowedElements={["script", "iframe", "object", "embed", "form", "input", "button"]}
                                 components={{
                                     code({ className, children, ...props }) {
                                         const match = /language-(\w+)/.exec(className || "");
@@ -127,9 +130,10 @@ export function MessageBubble({
                                             );
                                         }
 
+                                        const lang = match?.[1] ?? "text";
                                         return (
                                             <SyntaxHighlighter
-                                                language={match![1]}
+                                                language={lang}
                                                 PreTag="div"
                                                 style={oneDark as Record<string, React.CSSProperties>}
                                                 customStyle={{

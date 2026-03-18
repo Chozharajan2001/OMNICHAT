@@ -55,6 +55,8 @@ export function useChat(options: UseOmniChatOptions = {}) {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const abortControllerRef = useRef<AbortController | null>(null);
+    const currentAssistantMsgIdRef = useRef<string | null>(null);
+    const accumulatedContentRef = useRef<string>("");
 
     const handleSubmit = useCallback(
         async (e?: React.FormEvent) => {
@@ -90,6 +92,8 @@ export function useChat(options: UseOmniChatOptions = {}) {
 
             // Create abort controller for this request
             abortControllerRef.current = new AbortController();
+            currentAssistantMsgIdRef.current = assistantMsgId;
+            accumulatedContentRef.current = "";
 
             try {
                 const response = await fetch("/api/chat", {
@@ -136,6 +140,7 @@ export function useChat(options: UseOmniChatOptions = {}) {
 
                     const chunk = decoder.decode(value, { stream: true });
                     accumulatedContent += chunk;
+                    accumulatedContentRef.current = accumulatedContent;
 
                     // Update the assistant message with streamed content
                     updateLastMessage(accumulatedContent);
@@ -150,6 +155,10 @@ export function useChat(options: UseOmniChatOptions = {}) {
             } catch (err: unknown) {
                 if (err instanceof Error && err.name === "AbortError") {
                     // User cancelled the request
+                    // If there's partial content, keep it; otherwise remove the empty message
+                    if (accumulatedContentRef.current.trim() === "" && currentAssistantMsgIdRef.current) {
+                        removeMessage(currentAssistantMsgIdRef.current);
+                    }
                     return;
                 }
 
@@ -163,6 +172,8 @@ export function useChat(options: UseOmniChatOptions = {}) {
             } finally {
                 setIsLoading(false);
                 abortControllerRef.current = null;
+                currentAssistantMsgIdRef.current = null;
+                accumulatedContentRef.current = "";
             }
         },
         [
