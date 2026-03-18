@@ -61,7 +61,7 @@ export function MessageBubble({
         >
             <div
                 className={cn(
-                    "glass-panel mx-auto flex max-w-4xl overflow-hidden border border-border/70 shadow-[0_16px_60px_rgba(0,0,0,0.12)]",
+                    "glass-panel mx-auto flex max-w-4xl border border-border/70 shadow-[0_16px_60px_rgba(0,0,0,0.12)]",
                     isCompact ? "gap-3 rounded-[1.5rem] px-4 py-4" : "gap-4 rounded-[1.75rem] px-5 py-5",
                     isUser
                         ? "bg-primary/10"
@@ -83,7 +83,7 @@ export function MessageBubble({
                     )}
                 </div>
 
-                    <div className={cn("flex-1 overflow-hidden", isCompact ? "space-y-1.5" : "space-y-2")}>
+                    <div className={cn("flex-1 min-w-0", isCompact ? "space-y-1.5" : "space-y-2")}>
                         <div className="flex items-center justify-between gap-2">
                             <div className="text-sm font-medium">
                                 {isUser ? "You" : "Assistant"}
@@ -110,7 +110,7 @@ export function MessageBubble({
                         </Button>
                     </div>
 
-                    <div className="prose prose-sm dark:prose-invert max-w-none overflow-hidden">
+                    <div className="prose prose-sm dark:prose-invert max-w-none break-words">
                         {content ? (
                             <ReactMarkdown
                                 disallowedElements={["script", "iframe", "object", "embed", "form", "input", "button"]}

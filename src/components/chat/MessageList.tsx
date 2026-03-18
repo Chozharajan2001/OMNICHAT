@@ -2,7 +2,6 @@
 
 import { useEffect, useRef } from "react";
 import { MessageBubble } from "./MessageBubble";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePersonalizationStore } from "@/stores/personalization-store";
 
@@ -89,16 +88,14 @@ export function MessageList({ messages, isLoading, isInitialLoading, showTokenCo
     }
 
     return (
-        <ScrollArea
-            className="h-full rounded-[2rem] border border-border/60 bg-background/20"
+        <div
+            ref={scrollRef}
+            role="log"
+            aria-live="polite"
+            aria-label="Chat messages"
+            className="chat-scroll h-full overflow-y-auto rounded-[2rem] border border-border/60 bg-background/20"
         >
-            <div 
-                ref={scrollRef}
-                role="log"
-                aria-live="polite"
-                aria-label="Chat messages"
-                className={chatDensity === "compact" ? "flex flex-col py-3" : "flex flex-col py-4"}
-            >
+            <div className={chatDensity === "compact" ? "flex flex-col py-3" : "flex flex-col py-4"}>
                 {messages.map((message, index) => (
                     <MessageBubble
                         key={message.id || `msg-${index}`}
@@ -115,6 +112,6 @@ export function MessageList({ messages, isLoading, isInitialLoading, showTokenCo
                     />
                 ))}
             </div>
-        </ScrollArea>
+        </div>
     );
 }

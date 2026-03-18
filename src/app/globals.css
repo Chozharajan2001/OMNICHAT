@@ -156,3 +156,23 @@ textarea,
   font-size: 0.7rem;
   color: var(--muted-foreground);
 }
+
+/* Custom thin scrollbar for chat message list */
+.chat-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.chat-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.chat-scroll::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 9999px;
+}
+.chat-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+/* Firefox */
+.chat-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
