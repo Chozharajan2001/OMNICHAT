@@ -11,7 +11,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Chrome, Github } from "lucide-react";
+import { Chrome, Github, KeyRound, ShieldCheck, Sparkles } from "lucide-react";
 
 export default function LoginPage() {
     const router = useRouter();
@@ -50,17 +50,62 @@ export default function LoginPage() {
     };
 
     return (
-        <div className="flex min-h-screen items-center justify-center p-4">
-            <Card className="w-full max-w-md">
-                <CardHeader className="space-y-1">
-                    <CardTitle className="text-2xl font-bold">Welcome to OmniChat</CardTitle>
-                    <CardDescription>
-                        Sign in to access your AI chat assistant
-                    </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
+        <div className="app-shell flex min-h-screen items-center justify-center px-4 py-10">
+            <div className="grid w-full max-w-6xl gap-8 lg:grid-cols-[minmax(0,1.1fr)_420px]">
+                <section className="glass-panel hidden rounded-[2rem] border border-border/70 p-10 lg:flex lg:flex-col lg:justify-between">
+                    <div>
+                        <div className="section-kicker mb-4 flex items-center gap-2">
+                            <Sparkles className="h-3.5 w-3.5" />
+                            Personal AI workspace
+                        </div>
+                        <h1 className="max-w-xl text-5xl font-semibold tracking-tight">
+                            One desk for every model you use.
+                        </h1>
+                        <p className="mt-5 max-w-2xl text-base leading-8 text-muted-foreground">
+                            Bring your own keys, keep credentials encrypted, and switch between
+                            providers without losing your preferred workflow.
+                        </p>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-3">
+                        <div className="rounded-[1.5rem] border border-border/70 bg-background/30 p-5">
+                            <ShieldCheck className="h-5 w-5 text-primary" />
+                            <div className="mt-3 font-medium">Encrypted vault</div>
+                            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                                API keys are stored encrypted before persistence.
+                            </p>
+                        </div>
+                        <div className="rounded-[1.5rem] border border-border/70 bg-background/30 p-5">
+                            <KeyRound className="h-5 w-5 text-primary" />
+                            <div className="mt-3 font-medium">Bring your own models</div>
+                            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                                Connect OpenAI, Anthropic, Google, Groq, and more.
+                            </p>
+                        </div>
+                        <div className="rounded-[1.5rem] border border-border/70 bg-background/30 p-5">
+                            <Sparkles className="h-5 w-5 text-primary" />
+                            <div className="mt-3 font-medium">Personal defaults</div>
+                            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                                Save prompts, density, theme, and workspace behavior.
+                            </p>
+                        </div>
+                    </div>
+                </section>
+
+                <Card className="glass-panel w-full rounded-[2rem] border border-border/70 bg-background/50 shadow-[0_24px_100px_rgba(0,0,0,0.2)]">
+                    <CardHeader className="space-y-2">
+                        <div className="section-kicker flex items-center gap-2">
+                            <Sparkles className="h-3.5 w-3.5" />
+                            Access workspace
+                        </div>
+                        <CardTitle className="text-3xl font-semibold tracking-tight">Sign in to OmniChat</CardTitle>
+                        <CardDescription className="text-sm leading-6">
+                            Continue with password or OAuth to access your personal AI workspace.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
                     {error && (
-                        <div className="rounded-md bg-destructive/15 p-3 text-sm text-destructive">
+                        <div className="rounded-2xl bg-destructive/15 p-3 text-sm text-destructive">
                             {error}
                         </div>
                     )}
@@ -95,7 +140,7 @@ export default function LoginPage() {
                                 required
                             />
                         </div>
-                        <Button type="submit" className="w-full" disabled={isLoading}>
+                        <Button type="submit" className="h-11 w-full rounded-full" disabled={isLoading}>
                             {isLoading ? "Signing in..." : "Sign In"}
                         </Button>
                     </form>
@@ -117,6 +162,7 @@ export default function LoginPage() {
                             variant="outline"
                             onClick={() => handleOAuthSignIn("google")}
                             disabled={isLoading}
+                            className="rounded-full"
                         >
                             <Chrome className="mr-2 h-4 w-4" />
                             Google
@@ -125,18 +171,20 @@ export default function LoginPage() {
                             variant="outline"
                             onClick={() => handleOAuthSignIn("github")}
                             disabled={isLoading}
+                            className="rounded-full"
                         >
                             <Github className="mr-2 h-4 w-4" />
                             GitHub
                         </Button>
                     </div>
-                </CardContent>
-                <CardFooter className="flex flex-col space-y-2">
-                    <p className="text-xs text-center text-muted-foreground">
-                        By signing in, you agree to our Terms of Service and Privacy Policy.
-                    </p>
-                </CardFooter>
-            </Card>
+                    </CardContent>
+                    <CardFooter className="flex flex-col space-y-2">
+                        <p className="text-center text-xs text-muted-foreground">
+                            By signing in, you agree to our Terms of Service and Privacy Policy.
+                        </p>
+                    </CardFooter>
+                </Card>
+            </div>
         </div>
     );
 }

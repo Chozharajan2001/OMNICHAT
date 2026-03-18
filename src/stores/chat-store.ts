@@ -12,7 +12,9 @@ export interface Conversation {
     title: string;
     providerId: string;
     modelId: string;
+    projectId?: string | null;
     updatedAt: string;
+    archivedAt?: string | null;
     lastMessage?: {
         content: string;
         role: string;
@@ -25,6 +27,7 @@ export interface Message {
     content: string;
     modelId?: string;
     providerId?: string;
+    tokenCount?: number;
     createdAt: string;
 }
 
@@ -32,6 +35,7 @@ interface ChatState {
     // Current model selection
     providerId: string;
     modelId: string;
+    activeProjectId: string | null;
 
     // Current conversation
     conversationId: string | null;
@@ -45,11 +49,13 @@ interface ChatState {
     setProviderId: (id: string) => void;
     setModelId: (id: string) => void;
     setModel: (providerId: string, modelId: string) => void;
+    setActiveProjectId: (id: string | null) => void;
 
     setConversationId: (id: string | null) => void;
     setConversationTitle: (title: string) => void;
     setMessages: (messages: Message[]) => void;
     addMessage: (message: Message) => void;
+    removeMessage: (id: string) => void;
     updateLastMessage: (content: string) => void;
     clearMessages: () => void;
 
@@ -63,6 +69,7 @@ export const useChatStore = create<ChatState>()(
             // Default values
             providerId: "openai",
             modelId: "gpt-4o",
+            activeProjectId: null,
             conversationId: null,
             conversationTitle: "New Chat",
             messages: [],
@@ -72,6 +79,7 @@ export const useChatStore = create<ChatState>()(
             setProviderId: (id) => set({ providerId: id }),
             setModelId: (id) => set({ modelId: id }),
             setModel: (providerId, modelId) => set({ providerId, modelId }),
+            setActiveProjectId: (activeProjectId) => set({ activeProjectId }),
 
             // Conversation actions
             setConversationId: (id) => set({ conversationId: id }),
@@ -79,6 +87,10 @@ export const useChatStore = create<ChatState>()(
             setMessages: (messages) => set({ messages }),
             addMessage: (message) =>
                 set((state) => ({ messages: [...state.messages, message] })),
+            removeMessage: (id) =>
+                set((state) => ({
+                    messages: state.messages.filter((message) => message.id !== id),
+                })),
             updateLastMessage: (content) =>
                 set((state) => {
                     const messages = [...state.messages];
@@ -101,6 +113,7 @@ export const useChatStore = create<ChatState>()(
             partialize: (state) => ({
                 providerId: state.providerId,
                 modelId: state.modelId,
+                activeProjectId: state.activeProjectId,
                 isSidebarOpen: state.isSidebarOpen,
             }),
         }

@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 interface ChatInputProps {
     value: string;
     isLoading: boolean;
+    sendWithEnter?: boolean;
     onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
     onSubmit: (e?: React.FormEvent) => void;
     onStop: () => void;
@@ -22,61 +23,69 @@ interface ChatInputProps {
 export function ChatInput({
     value,
     isLoading,
+    sendWithEnter = true,
     onChange,
     onSubmit,
     onStop,
     disabled,
 }: ChatInputProps) {
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-        if (e.key === "Enter" && !e.shiftKey) {
+        const shouldSubmit =
+            sendWithEnter
+                ? e.key === "Enter" && !e.shiftKey
+                : e.key === "Enter" && (e.metaKey || e.ctrlKey);
+
+        if (shouldSubmit) {
             e.preventDefault();
             onSubmit();
         }
     };
 
     return (
-        <form onSubmit={onSubmit} className="border-t bg-background p-4">
-            <div className="mx-auto flex max-w-3xl gap-2">
-                <div className="relative flex-1">
-                    <Textarea
-                        value={value}
-                        onChange={onChange}
-                        onKeyDown={handleKeyDown}
-                        placeholder="Type a message..."
-                        disabled={disabled || isLoading}
-                        className={cn(
-                            "min-h-[52px] max-h-[200px] resize-none",
-                            "focus-visible:ring-1"
-                        )}
-                        rows={1}
-                    />
+        <form onSubmit={onSubmit} className="pt-4">
+            <div className="glass-panel mx-auto max-w-4xl rounded-[2rem] border border-border/70 p-3 shadow-[0_20px_80px_rgba(0,0,0,0.16)]">
+                <div className="flex flex-col gap-3 sm:flex-row">
+                    <div className="relative flex-1">
+                        <div className="mb-2 flex items-center justify-between px-1">
+                            <span className="section-kicker">Prompt composer</span>
+                            <span className="text-xs text-muted-foreground">
+                                {sendWithEnter ? "Enter to send" : "Ctrl/Cmd+Enter to send"}
+                            </span>
+                        </div>
+                        <Textarea
+                            value={value}
+                            onChange={onChange}
+                            onKeyDown={handleKeyDown}
+                            placeholder="Ask anything, compare models, or shape the reply with your own voice."
+                            disabled={disabled || isLoading}
+                            className={cn(
+                                "min-h-[108px] max-h-[220px] resize-none rounded-[1.5rem] border-0 bg-transparent px-4 py-4 text-base shadow-none sm:min-h-[120px]",
+                                "focus-visible:ring-0 focus-visible:ring-offset-0"
+                            )}
+                            rows={4}
+                        />
+                    </div>
+
+                    {isLoading ? (
+                        <Button
+                            type="button"
+                            variant="destructive"
+                            onClick={onStop}
+                            className="h-12 w-full shrink-0 rounded-2xl sm:mt-auto sm:h-14 sm:w-14 sm:rounded-full"
+                        >
+                            <Square className="h-4 w-4" />
+                        </Button>
+                    ) : (
+                        <Button
+                            type="submit"
+                            disabled={!value.trim() || disabled}
+                            className="h-12 w-full shrink-0 rounded-2xl shadow-[0_16px_30px_rgba(124,109,255,0.24)] sm:mt-auto sm:h-14 sm:w-14 sm:rounded-full"
+                        >
+                            <Send className="h-4 w-4" />
+                        </Button>
+                    )}
                 </div>
-
-                {isLoading ? (
-                    <Button
-                        type="button"
-                        variant="destructive"
-                        size="icon"
-                        onClick={onStop}
-                        className="shrink-0"
-                    >
-                        <Square className="h-4 w-4" />
-                    </Button>
-                ) : (
-                    <Button
-                        type="submit"
-                        size="icon"
-                        disabled={!value.trim() || disabled}
-                        className="shrink-0"
-                    >
-                        <Send className="h-4 w-4" />
-                    </Button>
-                )}
             </div>
-
-            <p className="mt-2 text-center text-xs text-muted-foreground">
-                Press Enter to send, Shift+Enter for new line
-            </p>
         </form>
     );
 }

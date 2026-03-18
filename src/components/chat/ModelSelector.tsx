@@ -5,9 +5,12 @@
 
 "use client";
 
+import Link from "next/link";
 import { useChatStore } from "@/stores/chat-store";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { SUPPORTED_PROVIDERS } from "@/lib/mastra/providers";
+import { getProvider, getModel } from "@/lib/mastra/providers";
+import { Button } from "@/components/ui/button";
 import {
     Select,
     SelectContent,
@@ -15,12 +18,15 @@ import {
     SelectItem,
     SelectLabel,
     SelectTrigger,
-    SelectValue,
 } from "@/components/ui/select";
+import { KeyRound, Sparkles } from "lucide-react";
 
 export function ModelSelector() {
     const { modelId, providerId, setModel } = useChatStore();
     const { keys } = useApiKeys();
+    const provider = getProvider(providerId);
+    const model = getModel(providerId, modelId);
+    const hasAnyValidKey = keys.some((key) => key.isValid);
 
     // Check which providers have keys configured
     const hasKey = (providerId: string) => {
@@ -33,13 +39,39 @@ export function ModelSelector() {
         setModel(newProviderId, newModelId);
     };
 
+    if (!hasAnyValidKey) {
+        return (
+            <Link href="/settings/providers">
+                <Button
+                    variant="outline"
+                    className="h-12 rounded-full border-border/70 bg-background/40 px-4"
+                >
+                    <KeyRound className="h-4 w-4" />
+                    Connect a provider
+                </Button>
+            </Link>
+        );
+    }
+
     return (
         <Select
             value={`${providerId}:${modelId}`}
             onValueChange={handleValueChange}
         >
-            <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="Select model" />
+            <SelectTrigger className="h-12 w-[260px] rounded-full border-border/70 bg-background/40 px-4 shadow-none">
+                <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/14 text-primary">
+                        <Sparkles className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0 text-left">
+                        <div className="truncate text-sm font-semibold">
+                            {model?.name || "Select model"}
+                        </div>
+                        <div className="truncate text-xs text-muted-foreground">
+                            {provider?.name || "Provider"}
+                        </div>
+                    </div>
+                </div>
             </SelectTrigger>
             <SelectContent>
                 {SUPPORTED_PROVIDERS.map((provider) => (

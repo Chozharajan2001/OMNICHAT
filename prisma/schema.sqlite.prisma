@@ -1,37 +1,32 @@
 // prisma/schema.sqlite.prisma
-// SQLite schema for Tauri desktop app (single-user, local-first)
+// SQLite schema for local development and Tauri desktop usage.
 // Usage: DATABASE_URL="file:./omnichat.db" prisma db push --schema=prisma/schema.sqlite.prisma
 
 generator client {
     provider        = "prisma-client-js"
-    output          = "../node_modules/.prisma/client-sqlite"
-    previewFeatures = ["driverAdapters"]
+    output          = "../node_modules/.prisma/client"
 }
 
 datasource db {
     provider = "sqlite"
 }
 
-// ────────────────────────────────────────────────────────────────
-// User & Authentication (Simplified for Desktop)
-// ────────────────────────────────────────────────────────────────
-
 model User {
     id            String   @id @default(cuid())
     email         String   @unique
     name          String?
-    passwordHash  String?  // For password auth (optional in desktop)
+    passwordHash  String?
     emailVerified DateTime?
     image         String?
     createdAt     DateTime @default(now())
     updatedAt     DateTime @updatedAt
 
-    // Relations
-    accounts       Account[]
-    sessions       Session[]
-    apiKeys        UserApiKey[]
-    preferences    UserPreference?
-    conversations  Conversation[]
+    accounts      Account[]
+    sessions      Session[]
+    apiKeys       UserApiKey[]
+    preferences   UserPreference?
+    projects      Project[]
+    conversations Conversation[]
 
     @@map("users")
 }
@@ -75,20 +70,16 @@ model VerificationToken {
     @@map("verification_tokens")
 }
 
-// ────────────────────────────────────────────────────────────────
-// API Keys (BYOK)
-// ────────────────────────────────────────────────────────────────
-
 model UserApiKey {
-    id               String   @id @default(cuid())
-    userId           String
-    providerId       String
-    encryptedKey     String
-    keyHint          String?
-    isValid          Boolean  @default(true)
-    lastValidatedAt  DateTime?
-    createdAt        DateTime @default(now())
-    updatedAt        DateTime @updatedAt
+    id              String   @id @default(cuid())
+    userId          String
+    providerId      String
+    encryptedKey    String
+    keyHint         String?
+    isValid         Boolean  @default(true)
+    lastValidatedAt DateTime?
+    createdAt       DateTime @default(now())
+    updatedAt       DateTime @updatedAt
 
     user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -96,30 +87,22 @@ model UserApiKey {
     @@map("user_api_keys")
 }
 
-// ────────────────────────────────────────────────────────────────
-// User Preferences
-// ────────────────────────────────────────────────────────────────
-
 model UserPreference {
-    id                     String   @id @default(cuid())
-    userId                 String   @unique
-    defaultProviderId      String?
-    defaultModelId         String?
-    defaultSystemPrompt    String?
-    theme                  String   @default("system")
-    sendWithEnter          Boolean  @default(true)
-    showTokenCount         Boolean  @default(false)
-    createdAt              DateTime @default(now())
-    updatedAt              DateTime @updatedAt
+    id                  String   @id @default(cuid())
+    userId              String   @unique
+    defaultProviderId   String?
+    defaultModelId      String?
+    defaultSystemPrompt String?
+    theme               String   @default("system")
+    sendWithEnter       Boolean  @default(true)
+    showTokenCount      Boolean  @default(false)
+    createdAt           DateTime @default(now())
+    updatedAt           DateTime @updatedAt
 
     user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
     @@map("user_preferences")
 }
-
-// ────────────────────────────────────────────────────────────────
-// Conversations & Messages
-// ────────────────────────────────────────────────────────────────
 
 model Conversation {
     id           String   @id @default(cuid())
@@ -128,22 +111,43 @@ model Conversation {
     providerId   String
     modelId      String
     systemPrompt String?
+    projectId    String?
     folderId     String?
+    archivedAt   DateTime?
     createdAt    DateTime @default(now())
     updatedAt    DateTime @updatedAt
 
     user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+    project  Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
     messages Message[]
 
     @@index([userId])
     @@index([userId, updatedAt])
+    @@index([userId, archivedAt])
+    @@index([projectId])
     @@map("conversations")
+}
+
+model Project {
+    id            String         @id @default(cuid())
+    userId        String
+    name          String
+    color         String?        @default("#7c6dff")
+    createdAt     DateTime       @default(now())
+    updatedAt     DateTime       @updatedAt
+
+    user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+    conversations Conversation[]
+
+    @@unique([userId, name])
+    @@index([userId, updatedAt])
+    @@map("projects")
 }
 
 model Message {
     id             String   @id @default(cuid())
     conversationId String
-    role           String   // "system" | "user" | "assistant"
+    role           String
     content        String
     modelId        String?
     providerId     String?

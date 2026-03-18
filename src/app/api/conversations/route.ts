@@ -10,6 +10,7 @@ import { getServerSession } from "@/lib/auth/session";
 import {
     getConversations,
     createConversation,
+    deleteAllConversations,
 } from "@/lib/db/queries/conversations";
 import { getPreferences } from "@/lib/db/queries/preferences";
 import { createConversationSchema } from "@/lib/validators/schemas";
@@ -25,12 +26,13 @@ export async function GET(req: Request) {
         const limit = parseInt(searchParams.get("limit") || "50");
         const cursorId = searchParams.get("cursorId");
         const cursorUpdatedAt = searchParams.get("cursorUpdatedAt");
+        const archived = searchParams.get("archived") === "true";
 
         const cursor = cursorId && cursorUpdatedAt
             ? { id: cursorId, updatedAt: new Date(cursorUpdatedAt) }
             : undefined;
 
-        const result = await getConversations(session.user.id, limit, cursor);
+        const result = await getConversations(session.user.id, limit, cursor, { archived });
         return NextResponse.json(result);
     } catch (error: unknown) {
         console.error("Failed to fetch conversations:", error);
@@ -50,7 +52,7 @@ export async function POST(req: Request) {
         }
 
         const body = await req.json();
-        const { title, providerId, modelId, folderId } =
+        const { title, providerId, modelId, projectId, folderId } =
             createConversationSchema.parse(body);
 
         // Use user preferences as defaults if not provided
@@ -62,7 +64,7 @@ export async function POST(req: Request) {
             session.user.id,
             effectiveProviderId,
             effectiveModelId,
-            { title, folderId }
+            { title, projectId, folderId }
         );
 
         return NextResponse.json(conversation, { status: 201 });
@@ -81,5 +83,22 @@ export async function POST(req: Request) {
             { error: errorMessage },
             { status: 500 }
         );
+    }
+}
+
+export async function DELETE() {
+    try {
+        const session = await getServerSession();
+        if (!session?.user?.id) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+
+        const deletedCount = await deleteAllConversations(session.user.id);
+        return NextResponse.json({ success: true, deletedCount });
+    } catch (error: unknown) {
+        console.error("Failed to delete all conversations:", error);
+        const errorMessage =
+            error instanceof Error ? error.message : "Failed to delete all conversations";
+        return NextResponse.json({ error: errorMessage }, { status: 500 });
     }
 }

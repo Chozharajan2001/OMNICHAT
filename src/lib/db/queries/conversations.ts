@@ -19,6 +19,7 @@ export async function createConversation(
     modelId: string,
     options?: {
         title?: string;
+        projectId?: string;
         folderId?: string;
         systemPrompt?: string;
     }
@@ -29,6 +30,7 @@ export async function createConversation(
             providerId,
             modelId,
             title: options?.title || "New Chat",
+            projectId: options?.projectId,
             folderId: options?.folderId,
         },
     });
@@ -42,14 +44,18 @@ export async function createConversation(
 export async function getConversations(
     userId: string,
     limit = 50,
-    cursor?: { id: string; updatedAt: Date }
+    cursor?: { id: string; updatedAt: Date },
+    options?: { archived?: boolean }
 ): Promise<{
     conversations: (Conversation & {
         lastMessage?: Message | null;
     })[];
     nextCursor?: { id: string; updatedAt: Date } | null;
 }> {
-    const where = { userId };
+    const where = {
+        userId,
+        archivedAt: options?.archived ? { not: null } : null,
+    };
     const orderBy = { updatedAt: "desc" as const };
 
     const conversations = await prisma.conversation.findMany({
@@ -139,9 +145,11 @@ export async function updateConversation(
     userId: string,
     data: {
         title?: string;
+        projectId?: string | null;
         folderId?: string | null;
         modelId?: string;
         providerId?: string;
+        archivedAt?: Date | null;
     }
 ): Promise<Conversation> {
     // Ensure the conversation belongs to the user
@@ -176,6 +184,17 @@ export async function deleteConversation(
     await prisma.conversation.delete({
         where: { id: conversationId },
     });
+}
+
+/**
+ * Delete all conversations for a user.
+ */
+export async function deleteAllConversations(userId: string): Promise<number> {
+    const result = await prisma.conversation.deleteMany({
+        where: { userId },
+    });
+
+    return result.count;
 }
 
 /**

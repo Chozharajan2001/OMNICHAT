@@ -22,6 +22,7 @@ import {
     type ChatMessage,
 } from "@/lib/ai/context-manager";
 import { chatRequestSchema } from "@/lib/validators/schemas";
+import { chatRateLimiter, getRateLimitHeaders } from "@/lib/rate-limit";
 
 export const maxDuration = 60; // Allow up to 60 seconds for streaming
 
@@ -34,6 +35,25 @@ export async function POST(req: Request) {
         }
         const userId = session.user.id;
 
+        // 2. Check rate limit
+        const rateLimitResult = chatRateLimiter.check(userId);
+        if (rateLimitResult.limited) {
+            return NextResponse.json(
+                {
+                    error: "Rate limit exceeded",
+                    retryAfter: rateLimitResult.retryAfter,
+                    message: `Too many requests. Please wait ${rateLimitResult.retryAfter} seconds before trying again.`,
+                },
+                {
+                    status: 429,
+                    headers: {
+                        "Retry-After": String(rateLimitResult.retryAfter),
+                        ...getRateLimitHeaders(rateLimitResult.remaining, rateLimitResult.resetTime, 60),
+                    },
+                }
+            );
+        }
+
         // 2. Parse and validate request
         const body = await req.json();
         const {
@@ -41,6 +61,7 @@ export async function POST(req: Request) {
             providerId,
             modelId,
             conversationId: existingConversationId,
+            privateMode,
             systemPrompt: customSystemPrompt,
         } = chatRequestSchema.parse(body);
 
@@ -58,10 +79,10 @@ export async function POST(req: Request) {
         const effectiveSystemPrompt = customSystemPrompt ?? preferences?.defaultSystemPrompt ?? "You are a helpful assistant.";
 
         // 5. Get or create conversation
-        let conversationId: string | undefined = existingConversationId;
+        let conversationId: string | undefined = privateMode ? undefined : existingConversationId;
         let history: ChatMessage[] = [];
 
-        if (conversationId) {
+        if (!privateMode && conversationId) {
             const conversation = await getConversationWithMessages(conversationId, userId);
             if (!conversation) {
                 // Conversation not found or doesn't belong to user - create new one
@@ -76,7 +97,7 @@ export async function POST(req: Request) {
         }
 
         // Create new conversation if needed
-        if (!conversationId) {
+        if (!privateMode && !conversationId) {
             const newConversation = await createConversation(
                 userId,
                 providerId,
@@ -110,6 +131,10 @@ export async function POST(req: Request) {
 
             // Called when streaming completes successfully
             onFinish: async ({ text, usage }) => {
+                if (privateMode) {
+                    return;
+                }
+
                 try {
                     // Save user message
                     await addMessage(conversationId!, "user", userMessage.content, {
@@ -139,10 +164,17 @@ export async function POST(req: Request) {
             },
         });
 
-        // 10. Return streaming response
+        // 10. Return streaming response with rate limit headers
+        const rateLimitHeaders = getRateLimitHeaders(
+            rateLimitResult.remaining,
+            rateLimitResult.resetTime,
+            60
+        );
+
         return result.toTextStreamResponse({
             headers: {
-                "X-Conversation-Id": conversationId,
+                ...(privateMode ? {} : { "X-Conversation-Id": conversationId! }),
+                ...rateLimitHeaders,
             },
         });
     } catch (error: unknown) {

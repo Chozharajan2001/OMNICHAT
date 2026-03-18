@@ -11,16 +11,27 @@ import { useChatStore, type Message } from "@/stores/chat-store";
 
 interface UseOmniChatOptions {
     conversationId?: string | null;
+    projectId?: string | null;
     systemPrompt?: string;
+    privateMode?: boolean;
     temperature?: number;
     maxTokens?: number;
     onComplete?: (conversationId: string) => void;
     onError?: (error: Error) => void;
 }
 
+function createMessageId(): string {
+    if (typeof globalThis !== "undefined" && globalThis.crypto?.randomUUID) {
+        return globalThis.crypto.randomUUID();
+    }
+    return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+}
+
 export function useChat(options: UseOmniChatOptions = {}) {
     const {
+        projectId,
         systemPrompt,
+        privateMode = false,
         temperature = 0.7,
         maxTokens = 4096,
         onComplete,
@@ -36,6 +47,7 @@ export function useChat(options: UseOmniChatOptions = {}) {
         messages,
         setMessages,
         addMessage,
+        removeMessage,
         updateLastMessage,
     } = useChatStore();
 
@@ -56,14 +68,14 @@ export function useChat(options: UseOmniChatOptions = {}) {
 
             // Add user message to store
             addMessage({
-                id: crypto.randomUUID(),
+                id: createMessageId(),
                 role: "user",
                 content: userMessage,
                 createdAt: new Date().toISOString(),
             });
 
             // Add empty assistant message for streaming
-            const assistantMsgId = crypto.randomUUID();
+            const assistantMsgId = createMessageId();
             addMessage({
                 id: assistantMsgId,
                 role: "assistant",
@@ -87,7 +99,9 @@ export function useChat(options: UseOmniChatOptions = {}) {
                         messages: [{ role: "user", content: userMessage }],
                         providerId,
                         modelId,
-                        conversationId,
+                        conversationId: privateMode ? undefined : conversationId,
+                        projectId: privateMode ? undefined : projectId ?? undefined,
+                        privateMode,
                         systemPrompt,
                         temperature,
                         maxTokens,
@@ -102,7 +116,7 @@ export function useChat(options: UseOmniChatOptions = {}) {
 
                 // Get conversation ID from response header
                 const newConversationId = response.headers.get("X-Conversation-Id");
-                if (newConversationId && !conversationId) {
+                if (newConversationId && !privateMode && !conversationId) {
                     setConversationId(newConversationId);
                 }
 
@@ -130,7 +144,7 @@ export function useChat(options: UseOmniChatOptions = {}) {
                 // Update with final content
                 updateLastMessage(accumulatedContent);
 
-                if (newConversationId) {
+                if (newConversationId && !privateMode) {
                     onComplete?.(newConversationId);
                 }
             } catch (err: unknown) {
@@ -145,7 +159,7 @@ export function useChat(options: UseOmniChatOptions = {}) {
                 onError?.(err as Error);
 
                 // Remove the empty assistant message on error
-                setMessages(messages.filter((m) => m.id !== assistantMsgId));
+                removeMessage(assistantMsgId);
             } finally {
                 setIsLoading(false);
                 abortControllerRef.current = null;
@@ -157,14 +171,15 @@ export function useChat(options: UseOmniChatOptions = {}) {
             providerId,
             modelId,
             conversationId,
+            projectId,
+            privateMode,
             systemPrompt,
             temperature,
             maxTokens,
             addMessage,
             updateLastMessage,
             setConversationId,
-            setMessages,
-            messages,
+            removeMessage,
             onComplete,
             onError,
         ]
@@ -194,12 +209,13 @@ export function useChat(options: UseOmniChatOptions = {}) {
                 if (!response.ok) throw new Error("Failed to load conversation");
 
                 const data = await response.json();
-                const loadedMessages: Message[] = data.messages.map((m: { id: string; role: string; content: string; modelId?: string; providerId?: string; createdAt: string }) => ({
+                const loadedMessages: Message[] = data.messages.map((m: { id: string; role: string; content: string; modelId?: string; providerId?: string; tokenCount?: number; createdAt: string }) => ({
                     id: m.id,
                     role: m.role,
                     content: m.content,
                     modelId: m.modelId,
                     providerId: m.providerId,
+                    tokenCount: m.tokenCount,
                     createdAt: m.createdAt,
                 }));
 

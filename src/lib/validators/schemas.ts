@@ -22,6 +22,7 @@ export const chatRequestSchema = z.object({
     providerId: z.string().min(1),
     modelId: z.string().min(1),
     conversationId: z.string().cuid().optional(),
+    privateMode: z.boolean().optional().default(false),
     temperature: z.number().min(0).max(2).optional().default(0.7),
     maxTokens: z.number().min(1).max(200000).optional().default(4096),
     systemPrompt: z.string().max(10000).optional(),
@@ -61,6 +62,7 @@ export const createConversationSchema = z.object({
     title: z.string().max(200).optional(),
     providerId: z.string().min(1),
     modelId: z.string().min(1),
+    projectId: z.string().cuid().optional(),
     folderId: z.string().cuid().optional(),
     systemPrompt: z.string().max(10000).optional(),
 });
@@ -72,7 +74,9 @@ export type CreateConversationRequest = z.infer<typeof createConversationSchema>
    ──────────────────────────────────────────────────────────────── */
 export const updateConversationSchema = z.object({
     title: z.string().max(200).optional(),
+    projectId: z.string().cuid().nullable().optional(),
     folderId: z.string().cuid().nullable().optional(),
+    archived: z.boolean().optional(),
     isPinned: z.boolean().optional(),
     // Additional fields (e.g., model changes) can be added later.
 });
