@@ -18,6 +18,7 @@ import {
     Search,
     Settings,
     Sparkles,
+    X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePersonalizationStore } from "@/stores/personalization-store";
@@ -52,6 +53,9 @@ export function ConversationSidebar() {
     const [isLoadingProjects, setIsLoadingProjects] = useState(true);
     const [isDesktop, setIsDesktop] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
+    const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
+    const [newProjectName, setNewProjectName] = useState("");
+    const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<{ type: "conversation" | "project"; id: string } | null>(null);
     const sidebarDefaultState = usePersonalizationStore((state) => state.sidebarDefaultState);
 
     const fetchConversations = useCallback(async () => {
@@ -126,8 +130,12 @@ export function ConversationSidebar() {
     const handleDeleteConversation = async (id: string, e: React.MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
+        setDeleteConfirmDialog({ type: "conversation", id });
+    };
 
-        if (!confirm("Delete this conversation?")) return;
+    const confirmDeleteConversation = async () => {
+        if (!deleteConfirmDialog || deleteConfirmDialog.type !== "conversation") return;
+        const id = deleteConfirmDialog.id;
 
         try {
             const response = await fetch(`/api/conversations/${id}`, {
@@ -145,6 +153,8 @@ export function ConversationSidebar() {
         } catch (error) {
             console.error("Failed to delete conversation:", error);
             toastError("Delete failed");
+        } finally {
+            setDeleteConfirmDialog(null);
         }
     };
 
@@ -193,9 +203,14 @@ export function ConversationSidebar() {
         }
     };
 
-    const handleCreateProject = async () => {
-        const name = window.prompt("New project name");
-        if (!name?.trim()) {
+    const handleCreateProject = () => {
+        setNewProjectName("");
+        setShowNewProjectDialog(true);
+    };
+
+    const handleCreateProjectSubmit = async () => {
+        const name = newProjectName.trim();
+        if (!name) {
             return;
         }
 
@@ -203,7 +218,7 @@ export function ConversationSidebar() {
             const response = await fetch("/api/projects", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name: name.trim() }),
+                body: JSON.stringify({ name }),
             });
 
             const data = await response.json();
@@ -212,6 +227,8 @@ export function ConversationSidebar() {
             }
 
             await fetchProjects();
+            setShowNewProjectDialog(false);
+            setNewProjectName("");
             success("Project created");
         } catch (error) {
             console.error("Failed to create project:", error);
@@ -219,10 +236,13 @@ export function ConversationSidebar() {
         }
     };
 
-    const handleDeleteProject = async (projectId: string) => {
-        if (!confirm("Delete this project? Conversations will remain and be unassigned.")) {
-            return;
-        }
+    const handleDeleteProject = (projectId: string) => {
+        setDeleteConfirmDialog({ type: "project", id: projectId });
+    };
+
+    const confirmDeleteProject = async () => {
+        if (!deleteConfirmDialog || deleteConfirmDialog.type !== "project") return;
+        const projectId = deleteConfirmDialog.id;
 
         try {
             const response = await fetch(`/api/projects/${projectId}`, {
@@ -242,6 +262,8 @@ export function ConversationSidebar() {
         } catch (error) {
             console.error("Failed to delete project:", error);
             toastError("Project delete failed");
+        } finally {
+            setDeleteConfirmDialog(null);
         }
     };
 
@@ -438,6 +460,107 @@ export function ConversationSidebar() {
                     </Link>
                 </div>
             </aside>
+
+            {/* New Project Dialog */}
+            {showNewProjectDialog && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center">
+                    <button
+                        type="button"
+                        aria-label="Close dialog"
+                        className="absolute inset-0 bg-black/45 backdrop-blur-sm"
+                        onClick={() => setShowNewProjectDialog(false)}
+                    />
+                    <div className="glass-panel relative z-10 w-[90%] max-w-sm rounded-2xl border border-border/70 p-6 shadow-[0_28px_120px_rgba(0,0,0,0.32)]">
+                        <div className="mb-4 flex items-center justify-between">
+                            <h3 className="text-lg font-semibold">New Project</h3>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 rounded-full"
+                                onClick={() => setShowNewProjectDialog(false)}
+                            >
+                                <X className="h-4 w-4" />
+                            </Button>
+                        </div>
+                        <div className="space-y-4">
+                            <Input
+                                value={newProjectName}
+                                onChange={(e) => setNewProjectName(e.target.value)}
+                                placeholder="Project name"
+                                className="h-11 rounded-xl"
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                        handleCreateProjectSubmit();
+                                    }
+                                }}
+                                autoFocus
+                            />
+                            <div className="flex gap-2">
+                                <Button
+                                    variant="ghost"
+                                    className="flex-1 rounded-xl"
+                                    onClick={() => setShowNewProjectDialog(false)}
+                                >
+                                    Cancel
+                                </Button>
+                                <Button
+                                    className="flex-1 rounded-xl"
+                                    onClick={handleCreateProjectSubmit}
+                                    disabled={!newProjectName.trim()}
+                                >
+                                    Create
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete Confirmation Dialog */}
+            {deleteConfirmDialog && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center">
+                    <button
+                        type="button"
+                        aria-label="Close dialog"
+                        className="absolute inset-0 bg-black/45 backdrop-blur-sm"
+                        onClick={() => setDeleteConfirmDialog(null)}
+                    />
+                    <div className="glass-panel relative z-10 w-[90%] max-w-sm rounded-2xl border border-border/70 p-6 shadow-[0_28px_120px_rgba(0,0,0,0.32)]">
+                        <div className="mb-4">
+                            <h3 className="text-lg font-semibold">
+                                {deleteConfirmDialog.type === "conversation" ? "Delete Conversation" : "Delete Project"}
+                            </h3>
+                        </div>
+                        <p className="mb-6 text-sm text-muted-foreground">
+                            {deleteConfirmDialog.type === "conversation"
+                                ? "Are you sure you want to delete this conversation? This action cannot be undone."
+                                : "Delete this project? Conversations will remain and be unassigned."}
+                        </p>
+                        <div className="flex gap-2">
+                            <Button
+                                variant="ghost"
+                                className="flex-1 rounded-xl"
+                                onClick={() => setDeleteConfirmDialog(null)}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                variant="destructive"
+                                className="flex-1 rounded-xl"
+                                onClick={() => {
+                                    if (deleteConfirmDialog.type === "conversation") {
+                                        confirmDeleteConversation();
+                                    } else {
+                                        confirmDeleteProject();
+                                    }
+                                }}
+                            >
+                                Delete
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </>
     );
 }
