@@ -15,6 +15,7 @@ import {
 import { getPreferences } from "@/lib/db/queries/preferences";
 import { createConversationSchema } from "@/lib/validators/schemas";
 import { ZodError } from "zod";
+import { MIN_PAGE_SIZE, MAX_PAGE_SIZE, DEFAULT_PAGE_SIZE } from "@/lib/constants";
 
 export async function GET(req: Request) {
     try {
@@ -24,7 +25,18 @@ export async function GET(req: Request) {
         }
 
         const { searchParams } = new URL(req.url);
-        const limit = parseInt(searchParams.get("limit") || "50");
+        
+        // Validate and clamp limit parameter
+        const limitParam = searchParams.get("limit");
+        let limit = DEFAULT_PAGE_SIZE;
+        if (limitParam) {
+            const parsed = parseInt(limitParam, 10);
+            if (!isNaN(parsed)) {
+                // Clamp to valid range
+                limit = Math.max(MIN_PAGE_SIZE, Math.min(MAX_PAGE_SIZE, parsed));
+            }
+        }
+        
         const cursorId = searchParams.get("cursorId");
         const cursorUpdatedAt = searchParams.get("cursorUpdatedAt");
         const archived = searchParams.get("archived") === "true";
