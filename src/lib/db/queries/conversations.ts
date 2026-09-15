@@ -24,6 +24,16 @@ export async function createConversation(
         systemPrompt?: string;
     }
 ): Promise<Conversation> {
+    // Verify project ownership if projectId is provided
+    if (options?.projectId) {
+        const project = await prisma.project.findUnique({
+            where: { id: options.projectId },
+        });
+        if (!project || project.userId !== userId) {
+            throw new Error("Project not found or access denied");
+        }
+    }
+
     return await prisma.conversation.create({
         data: {
             userId,
@@ -32,6 +42,7 @@ export async function createConversation(
             title: options?.title || "New Chat",
             projectId: options?.projectId,
             folderId: options?.folderId,
+            systemPrompt: options?.systemPrompt,
         },
     });
 }
@@ -158,6 +169,16 @@ export async function updateConversation(
     });
     if (!existing || existing.userId !== userId) {
         throw new Error("Conversation not found or access denied");
+    }
+
+    // Verify project ownership if projectId is being changed
+    if (data.projectId !== undefined && data.projectId !== null) {
+        const project = await prisma.project.findUnique({
+            where: { id: data.projectId },
+        });
+        if (!project || project.userId !== userId) {
+            throw new Error("Project not found or access denied");
+        }
     }
 
     return await prisma.conversation.update({

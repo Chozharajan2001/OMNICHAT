@@ -14,6 +14,7 @@ import {
 } from "@/lib/db/queries/conversations";
 import { getPreferences } from "@/lib/db/queries/preferences";
 import { createConversationSchema } from "@/lib/validators/schemas";
+import { ZodError } from "zod";
 
 export async function GET(req: Request) {
     try {
@@ -36,9 +37,8 @@ export async function GET(req: Request) {
         return NextResponse.json(result);
     } catch (error: unknown) {
         console.error("Failed to fetch conversations:", error);
-        const errorMessage = error instanceof Error ? error.message : "Failed to fetch conversations";
         return NextResponse.json(
-            { error: errorMessage },
+            { error: "Failed to fetch conversations" },
             { status: 500 }
         );
     }
@@ -71,16 +71,22 @@ export async function POST(req: Request) {
     } catch (error: unknown) {
         console.error("Failed to create conversation:", error);
 
-        if (error instanceof Error && error.name === "ZodError") {
+        if (error instanceof ZodError) {
             return NextResponse.json(
-                { error: "Invalid request", details: (error as import('zod').ZodError).issues },
+                { error: "Invalid request", details: error.issues },
                 { status: 400 }
             );
         }
 
-        const errorMessage = error instanceof Error ? error.message : "Failed to create conversation";
+        if (error instanceof Error && error.message === "Project not found or access denied") {
+            return NextResponse.json(
+                { error: error.message },
+                { status: 404 }
+            );
+        }
+
         return NextResponse.json(
-            { error: errorMessage },
+            { error: "Failed to create conversation" },
             { status: 500 }
         );
     }
@@ -97,8 +103,9 @@ export async function DELETE() {
         return NextResponse.json({ success: true, deletedCount });
     } catch (error: unknown) {
         console.error("Failed to delete all conversations:", error);
-        const errorMessage =
-            error instanceof Error ? error.message : "Failed to delete all conversations";
-        return NextResponse.json({ error: errorMessage }, { status: 500 });
+        return NextResponse.json(
+            { error: "Failed to delete all conversations" },
+            { status: 500 }
+        );
     }
 }

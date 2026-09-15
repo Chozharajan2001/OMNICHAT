@@ -18,10 +18,11 @@ export const chatRequestSchema = z.object({
                 content: z.string().min(1).max(100000),
             })
         )
-        .min(1),
+        .min(1)
+        .max(100), // Limit message array to 100 messages per request
     providerId: z.string().min(1),
     modelId: z.string().min(1),
-    conversationId: z.string().cuid().optional(),
+    conversationId: z.string().cuid().nullable().optional(),
     privateMode: z.boolean().optional().default(false),
     temperature: z.number().min(0).max(2).optional().default(0.7),
     maxTokens: z.number().min(1).max(200000).optional().default(4096),

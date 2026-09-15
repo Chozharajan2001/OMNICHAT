@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth/config";
 import { Button } from "@/components/ui/button";
 import { KeyRound, LogOut, Mail, UserRound } from "lucide-react";
+import SignOutButton from "./SignOutButton";
 
 export default async function AccountSettingsPage() {
     const session = await auth();
@@ -66,12 +67,7 @@ export default async function AccountSettingsPage() {
                             Profile editing and account deletion are not implemented yet. The next practical
                             account work is export/delete data and session management polish.
                         </p>
-                        <form action="/api/auth/signout" method="post">
-                            <Button type="submit" variant="outline" className="rounded-full">
-                                <LogOut className="h-4 w-4" />
-                                Sign out
-                            </Button>
-                        </form>
+                        <SignOutButton />
                     </div>
                 </div>
             </section>

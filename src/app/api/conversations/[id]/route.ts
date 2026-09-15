@@ -14,6 +14,7 @@ import {
     deleteConversation,
 } from "@/lib/db/queries/conversations";
 import { updateConversationSchema } from "@/lib/validators/schemas";
+import { ZodError } from "zod";
 
 export async function GET(
     req: Request,
@@ -35,17 +36,14 @@ export async function GET(
             );
         }
 
-        // Verify ownership
-        if (conversation.userId !== session.user.id) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-        }
+        // Note: Ownership is already enforced in getConversationWithMessages via userId filter
+        // No additional check needed here
 
         return NextResponse.json(conversation);
     } catch (error: unknown) {
         console.error("Failed to fetch conversation:", error);
-        const errorMessage = error instanceof Error ? error.message : "Failed to fetch conversation";
         return NextResponse.json(
-            { error: errorMessage },
+            { error: "Failed to fetch conversation" },
             { status: 500 }
         );
     }
@@ -76,9 +74,9 @@ export async function PATCH(
     } catch (error: unknown) {
         console.error("Failed to update conversation:", error);
 
-        if (error instanceof Error && error.name === "ZodError") {
+        if (error instanceof ZodError) {
             return NextResponse.json(
-                { error: "Invalid request", details: (error as import('zod').ZodError).issues },
+                { error: "Invalid request", details: error.issues },
                 { status: 400 }
             );
         }
@@ -90,9 +88,15 @@ export async function PATCH(
             );
         }
 
-        const errorMessage = error instanceof Error ? error.message : "Failed to update conversation";
+        if (error instanceof Error && error.message === "Project not found or access denied") {
+            return NextResponse.json(
+                { error: error.message },
+                { status: 404 }
+            );
+        }
+
         return NextResponse.json(
-            { error: errorMessage },
+            { error: "Failed to update conversation" },
             { status: 500 }
         );
     }
@@ -122,9 +126,8 @@ export async function DELETE(
             );
         }
 
-        const errorMessage = error instanceof Error ? error.message : "Failed to delete conversation";
         return NextResponse.json(
-            { error: errorMessage },
+            { error: "Failed to delete conversation" },
             { status: 500 }
         );
     }

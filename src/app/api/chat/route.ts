@@ -24,6 +24,7 @@ import {
 } from "@/lib/ai/context-manager";
 import { chatRequestSchema } from "@/lib/validators/schemas";
 import { chatRateLimiter, getRateLimitHeaders } from "@/lib/rate-limit";
+import { prisma } from "@/lib/db/prisma";
 
 export const maxDuration = 60; // Allow up to 60 seconds for streaming
 
@@ -73,6 +74,8 @@ export async function POST(req: Request) {
             conversationId: existingConversationId,
             privateMode,
             systemPrompt: customSystemPrompt,
+            temperature,
+            maxTokens,
         } = chatRequestSchema.parse(body);
 
         // 3. Get user's API key (decrypted)
@@ -84,13 +87,10 @@ export async function POST(req: Request) {
             );
         }
 
-        // 4. Get user preferences for defaults
-        const preferences = await getPreferences(userId);
-        const effectiveSystemPrompt = customSystemPrompt ?? preferences?.defaultSystemPrompt ?? "You are a helpful assistant.";
-
-        // 5. Get or create conversation
-        let conversationId: string | undefined = privateMode ? undefined : existingConversationId;
+        // 4. Get or create conversation
+        let conversationId: string | undefined = privateMode ? undefined : (existingConversationId ?? undefined);
         let history: ChatMessage[] = [];
+        let conversationSystemPrompt: string | null = null;
 
         if (!privateMode && conversationId) {
             const conversation = await getConversationWithMessages(conversationId, userId);
@@ -103,6 +103,7 @@ export async function POST(req: Request) {
                     role: m.role as "system" | "user" | "assistant",
                     content: m.content,
                 }));
+                conversationSystemPrompt = conversation.systemPrompt;
             }
         }
 
@@ -112,13 +113,31 @@ export async function POST(req: Request) {
                 userId,
                 providerId,
                 modelId,
-                { title: "New Chat" }
+                { 
+                    title: "New Chat",
+                    systemPrompt: customSystemPrompt,
+                }
             );
             conversationId = newConversation.id;
+            conversationSystemPrompt = customSystemPrompt ?? null;
         }
 
+        // 5. Get user preferences for defaults
+        const preferences = await getPreferences(userId);
+        // Priority: custom prompt > conversation prompt > user preference > default
+        const effectiveSystemPrompt = customSystemPrompt 
+            ?? conversationSystemPrompt 
+            ?? preferences?.defaultSystemPrompt 
+            ?? "You are a helpful assistant.";
+
         // 6. Prepare messages with context management
-        const allMessages: ChatMessage[] = [...history, ...messages];
+        // Filter out messages from submitted array that already exist in history
+        // to avoid duplication when client sends full transcript
+        const historyContents = new Set(history.map(m => `${m.role}:${m.content}`));
+        const newMessages = messages.filter(m => !historyContents.has(`${m.role}:${m.content}`));
+        
+        // Use only new messages combined with history for context preparation
+        const allMessages: ChatMessage[] = [...history, ...newMessages];
         const preparedMessages = prepareMessages(allMessages, {
             providerId,
             modelId,
@@ -146,6 +165,8 @@ export async function POST(req: Request) {
                 role: m.role,
                 content: m.content,
             })),
+            temperature,
+            maxOutputTokens: maxTokens,
 
             // Called when streaming completes successfully
             onFinish: async ({ text, usage }) => {
@@ -154,18 +175,31 @@ export async function POST(req: Request) {
                 }
 
                 try {
-                    // Save user message
-                    await addMessage(conversationId, "user", userMessage.content, {
-                        modelId,
-                        providerId,
-                        tokenCount: usage?.totalTokens,
-                    });
+                    // Use transaction to ensure both messages are saved atomically
+                    await prisma.$transaction(async (tx) => {
+                        // Save user message with actual role from request
+                        await tx.message.create({
+                            data: {
+                                conversationId,
+                                role: userMessage.role,
+                                content: userMessage.content,
+                                modelId,
+                                providerId,
+                                tokenCount: usage?.inputTokens,
+                            },
+                        });
 
-                    // Save assistant message
-                    await addMessage(conversationId, "assistant", text, {
-                        modelId,
-                        providerId,
-                        tokenCount: usage?.totalTokens,
+                        // Save assistant message
+                        await tx.message.create({
+                            data: {
+                                conversationId,
+                                role: "assistant",
+                                content: text,
+                                modelId,
+                                providerId,
+                                tokenCount: usage?.outputTokens,
+                            },
+                        });
                     });
 
                     // Update conversation title if it's a new conversation
@@ -173,9 +207,6 @@ export async function POST(req: Request) {
                         const title = generateTitleFromMessage(userMessage.content);
                         await updateConversation(conversationId, userId, { title });
                     }
-
-                    // Update conversation timestamp
-                    await updateConversation(conversationId, userId, {});
                 } catch (error) {
                     console.error("Failed to save messages:", error);
                 }
@@ -205,9 +236,9 @@ export async function POST(req: Request) {
             );
         }
 
-        const errorMessage = error instanceof Error ? error.message : "Internal server error";
+        // Return generic error message to avoid leaking internal details
         return NextResponse.json(
-            { error: errorMessage },
+            { error: "An error occurred while processing your request" },
             { status: 500 }
         );
     }

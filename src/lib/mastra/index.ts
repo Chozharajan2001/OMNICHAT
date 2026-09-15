@@ -11,6 +11,7 @@
 import { generateText, LanguageModel } from "ai";
 
 import { createOpenAI } from "@ai-sdk/openai";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createMistral } from "@ai-sdk/mistral";
@@ -38,6 +39,11 @@ const PROVIDER_FACTORIES: Record<string, ProviderFactory> = {
     xai: (apiKey) => createXai({ apiKey }),
     deepseek: (apiKey) => createDeepSeek({ apiKey }),
     perplexity: (apiKey) => createPerplexity({ apiKey }),
+    "nvidia-nim": (apiKey) => createOpenAICompatible({
+        name: "nvidia-nim",
+        apiKey,
+        baseURL: "https://integrate.api.nvidia.com/v1",
+    }),
 };
 
 /* ────────────────────────────────────────────────────────────────
@@ -106,6 +112,10 @@ export async function validateApiKey(
         if (process.env.NODE_ENV === "development") {
             const errorMessage = error instanceof Error ? error.message : "Unknown error";
             console.warn(`API key validation failed for ${providerId}:`, errorMessage);
+            // Log more details for debugging
+            if (error instanceof Error && 'cause' in error) {
+                console.warn('Error cause:', error.cause);
+            }
         }
         return false;
     }

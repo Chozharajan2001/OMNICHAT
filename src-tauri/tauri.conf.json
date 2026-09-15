@@ -25,7 +25,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://api.openai.com https://api.anthropic.com https://generativelanguage.googleapis.com https://api.mistral.ai https://api.groq.com https://api.x.ai https://api.deepseek.com https://api.perplexity.ai; frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
     }
   },
   "bundle": {
@@ -72,13 +72,22 @@
   "plugins": {
     "fs": {
       "scope": {
-        "allow": ["$APPDATA/**", "$DOCUMENT/**", "$DOWNLOAD/**", "$LOCALDATA/**"],
-        "deny": []
+        "allow": ["$APPDATA/**"],
+        "deny": ["$APPDATA/*.key", "$APPDATA/*.pem", "$APPDATA/**/secrets/**"]
       }
     },
     "shell": {
-      "open": true,
+      "open": false,
       "scope": []
+    },
+    "clipboard": {
+      "all": false
+    },
+    "dialog": {
+      "all": false
+    },
+    "notification": {
+      "all": false
     }
   }
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "@/lib/auth/session";
 import { getPreferences, upsertPreferences } from "@/lib/db/queries/preferences";
 import { preferencesSchema } from "@/lib/validators/schemas";
+import { ZodError } from "zod";
 
 /**
  * GET /api/preferences
@@ -35,10 +36,17 @@ export async function PATCH(request: Request) {
         return NextResponse.json({ preferences: updated });
     } catch (error: unknown) {
         console.error("Preferences update failed:", error);
-        const errorMessage = error instanceof Error ? error.message : "Invalid request";
+        
+        if (error instanceof ZodError) {
+            return NextResponse.json(
+                { error: "Invalid request", details: error.issues },
+                { status: 400 }
+            );
+        }
+        
         return NextResponse.json(
-            { error: errorMessage },
-            { status: 400 }
+            { error: "Failed to update preferences" },
+            { status: 500 }
         );
     }
 }

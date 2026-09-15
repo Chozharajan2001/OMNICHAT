@@ -11,6 +11,22 @@ import GitHub from "next-auth/providers/github";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db/prisma";
+import { authRateLimiter } from "@/lib/rate-limit";
+
+/**
+ * Validate password complexity requirements.
+ * - Minimum 8 characters
+ * - At least one uppercase letter
+ * - At least one lowercase letter
+ * - At least one number
+ */
+function validatePasswordComplexity(password: string): boolean {
+    if (password.length < 8) return false;
+    if (!/[A-Z]/.test(password)) return false;
+    if (!/[a-z]/.test(password)) return false;
+    if (!/[0-9]/.test(password)) return false;
+    return true;
+}
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
     secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
@@ -37,8 +53,24 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                     type: "password",
                 },
             },
-            async authorize(credentials) {
+            async authorize(credentials, request) {
                 if (!credentials?.email || !credentials?.password) {
+                    return null;
+                }
+
+                // Extract IP from request for rate limiting
+                const forwarded = request?.headers?.get?.("x-forwarded-for");
+                const realIp = request?.headers?.get?.("x-real-ip");
+                const clientIp = typeof forwarded === "string" 
+                    ? forwarded.split(",")[0].trim() 
+                    : typeof realIp === "string" 
+                        ? realIp 
+                        : "unknown";
+
+                // Check auth rate limit
+                const rateLimitResult = authRateLimiter.check(clientIp);
+                if (rateLimitResult.limited) {
+                    console.warn(`Auth rate limit exceeded for IP: ${clientIp}`);
                     return null;
                 }
 
@@ -62,6 +94,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                     const isDev = process.env.NODE_ENV === "development";
 
                     if (!isDesktopMode && !isDev) {
+                        return null;
+                    }
+
+                    // Validate password complexity
+                    if (!validatePasswordComplexity(password)) {
+                        console.warn("Password does not meet complexity requirements");
                         return null;
                     }
 

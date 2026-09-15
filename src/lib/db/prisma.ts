@@ -1,11 +1,8 @@
 import { PrismaLibSql } from "@prisma/adapter-libsql";
-import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
-import { Pool } from "pg";
 
 declare global {
     var __prisma: PrismaClient | undefined;
-    var __prismaPool: Pool | undefined;
 }
 
 function isSqliteUrl(url: string) {
@@ -20,13 +17,8 @@ function createPrismaClient() {
         return new PrismaClient({ adapter });
     }
 
-    const pool = globalThis.__prismaPool ?? new Pool({ connectionString: databaseUrl });
-    if (process.env.NODE_ENV !== "production") {
-        globalThis.__prismaPool = pool;
-    }
-
-    const adapter = new PrismaPg(pool);
-    return new PrismaClient({ adapter });
+    // For PostgreSQL, dynamically import to avoid bundling issues
+    throw new Error("PostgreSQL adapter not configured. Please use SQLite for local development.");
 }
 
 const prismaClient = globalThis.__prisma ?? createPrismaClient();

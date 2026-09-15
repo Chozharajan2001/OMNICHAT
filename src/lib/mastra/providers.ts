@@ -395,6 +395,32 @@ export const SUPPORTED_PROVIDERS: ProviderDefinition[] = [
             },
         ],
     },
+
+    {
+        id: "nvidia-nim",
+        name: "NVIDIA NIM",
+        description: "Access NVIDIA-hosted open models (Llama, GLM, DeepSeek, etc.).",
+        icon: "/icons/nvidia.svg",
+        website: "https://build.nvidia.com",
+        keyPlaceholder: "Enter your NVIDIA API key (starts with nvapi-)",
+        keyPattern: /^nvapi-[a-zA-Z0-9_-]{80,}$/,
+        docsUrl: "https://build.nvidia.com/explore/discover",
+        supportsStreaming: true,
+        models: [
+            {
+                id: "meta/llama-3.1-70b-instruct",
+                name: "Llama 3.1 70B Instruct",
+                providerId: "nvidia-nim",
+                description: "Meta's Llama model optimized for instruction following.",
+                contextWindow: 128000,
+                maxOutputTokens: 8000,
+                inputPricePerMToken: 0,
+                outputPricePerMToken: 0,
+                capabilities: ["text", "function-calling", "code"],
+                isDefault: true,
+            },
+        ],
+    },
 ];
 
 /* ────────────────────────────────────────────────────────────────

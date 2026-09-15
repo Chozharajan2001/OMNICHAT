@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth/config";
 
 export default auth((req) => {
-    const isLoggedIn = !!req.auth;
+    const isLoggedIn = !!req.auth?.user;
     const isAuthPage = req.nextUrl.pathname.startsWith("/login");
     const isApiAuthRoute = req.nextUrl.pathname.startsWith("/api/auth");
 

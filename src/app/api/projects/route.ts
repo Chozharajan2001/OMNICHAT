@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "@/lib/auth/session";
 import { createProject, getProjects } from "@/lib/db/queries/projects";
-import { z } from "zod";
+import { z, ZodError } from "zod";
 
 const createProjectSchema = z.object({
     name: z.string().min(1).max(80),
@@ -19,8 +19,10 @@ export async function GET() {
         return NextResponse.json({ projects });
     } catch (error: unknown) {
         console.error("Failed to fetch projects:", error);
-        const message = error instanceof Error ? error.message : "Failed to fetch projects";
-        return NextResponse.json({ error: message }, { status: 500 });
+        return NextResponse.json(
+            { error: "Failed to fetch projects" },
+            { status: 500 }
+        );
     }
 }
 
@@ -37,10 +39,17 @@ export async function POST(request: Request) {
         return NextResponse.json({ project }, { status: 201 });
     } catch (error: unknown) {
         console.error("Failed to create project:", error);
-        if (error instanceof Error && error.name === "ZodError") {
-            return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+        
+        if (error instanceof ZodError) {
+            return NextResponse.json(
+                { error: "Invalid request", details: error.issues },
+                { status: 400 }
+            );
         }
-        const message = error instanceof Error ? error.message : "Failed to create project";
-        return NextResponse.json({ error: message }, { status: 500 });
+        
+        return NextResponse.json(
+            { error: "Failed to create project" },
+            { status: 500 }
+        );
     }
 }
