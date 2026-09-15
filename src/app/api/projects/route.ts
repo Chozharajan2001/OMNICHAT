@@ -25,7 +25,7 @@ export async function GET() {
         }
 
         const projects = await getProjects(session.user.id);
-        return NextResponse.json({ projects });
+        return NextResponse.json({ data: { projects } });
     } catch (error: unknown) {
         console.error("Failed to fetch projects:", error);
         return NextResponse.json(
@@ -59,7 +59,7 @@ export async function POST(request: Request) {
         const project = await createProject(session.user.id, name, color);
         
         return NextResponse.json(
-            { project },
+            { data: { project } },
             {
                 status: 201,
                 headers: getRateLimitHeaders(rateLimit.remaining, rateLimit.resetTime, WRITE_RATE_LIMIT),
