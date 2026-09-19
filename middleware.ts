@@ -21,7 +21,8 @@ export default auth((req) => {
 
 export const config = {
     matcher: [
-        // Skip Next.js internals and static assets
-        "/((?!_next/static|_next/image|favicon.ico|api/auth|icons).*)",
+        // Keep the exact readiness endpoint public, even without an auth session.
+        // Other API routes (including health subpaths) retain authentication.
+        "/((?!_next/static|_next/image|favicon.ico|api/auth|api/health$|icons).*)",
     ],
 };

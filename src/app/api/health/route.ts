@@ -36,7 +36,7 @@ export async function GET(): Promise<NextResponse<HealthStatus>> {
 
   // Check encryption key availability
   try {
-    const encryptionKey = process.env.ENCRYPTION_KEY;
+    const encryptionKey = process.env.ENCRYPTION_SECRET_KEY;
     if (encryptionKey && encryptionKey.length >= 32) {
       checks.encryption = "up";
     }
@@ -59,5 +59,8 @@ export async function GET(): Promise<NextResponse<HealthStatus>> {
 
   const httpStatus = status === "healthy" ? 200 : 503;
 
-  return NextResponse.json(response, { status: httpStatus });
+  return NextResponse.json(response, {
+    status: httpStatus,
+    headers: { "Cache-Control": "no-store" },
+  });
 }

@@ -1,31 +1,35 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Conversation, Prisma, Project } from "@prisma/client";
 
-// Mock prisma
-vi.mock("@/lib/db/prisma", () => ({
-    prisma: {
-        conversation: {
-            create: vi.fn(),
-            findUnique: vi.fn(),
-            findMany: vi.fn(),
-            update: vi.fn(),
-            delete: vi.fn(),
-            deleteMany: vi.fn(),
-        },
-        project: {
-            findUnique: vi.fn(),
-        },
+type ConversationWithMessages = Prisma.ConversationGetPayload<{
+    include: { messages: true };
+}>;
+
+// Use concrete query signatures rather than casting generic Prisma methods.
+const mockPrisma = vi.hoisted(() => ({
+    conversation: {
+        create: vi.fn<(args: Prisma.ConversationCreateArgs) => Promise<Conversation>>(),
+        findUnique: vi.fn<
+            (args: Prisma.ConversationFindUniqueArgs) => Promise<Conversation | ConversationWithMessages | null>
+        >(),
+        findMany: vi.fn<(args: Prisma.ConversationFindManyArgs) => Promise<ConversationWithMessages[]>>(),
+        update: vi.fn<(args: Prisma.ConversationUpdateArgs) => Promise<Conversation>>(),
+        delete: vi.fn<(args: Prisma.ConversationDeleteArgs) => Promise<Conversation>>(),
+        deleteMany: vi.fn<(args: Prisma.ConversationDeleteManyArgs) => Promise<Prisma.BatchPayload>>(),
+    },
+    project: {
+        findUnique: vi.fn<(args: Prisma.ProjectFindUniqueArgs) => Promise<Project | null>>(),
     },
 }));
 
-import { prisma } from "@/lib/db/prisma";
+vi.mock("@/lib/db/prisma", () => ({ prisma: mockPrisma }));
+
 import {
     createConversation,
     getConversationWithMessages,
     updateConversation,
     deleteConversation,
 } from "../conversations";
-
-const mockPrisma = vi.mocked(prisma);
 
 describe("Conversation Queries", () => {
     beforeEach(() => {
@@ -38,7 +42,7 @@ describe("Conversation Queries", () => {
 
     describe("createConversation", () => {
         it("creates a conversation without project", async () => {
-            const mockConversation = {
+            const mockConversation: Conversation = {
                 id: "conv-123",
                 userId: "user-123",
                 providerId: "openai",
@@ -52,7 +56,7 @@ describe("Conversation Queries", () => {
                 updatedAt: new Date(),
             };
 
-            mockPrisma.conversation.create.mockResolvedValue(mockConversation as any);
+            mockPrisma.conversation.create.mockResolvedValue(mockConversation);
 
             const result = await createConversation("user-123", "openai", "gpt-4o", {
                 title: "New Chat",
@@ -73,7 +77,7 @@ describe("Conversation Queries", () => {
         });
 
         it("verifies project ownership when projectId is provided", async () => {
-            const mockProject = {
+            const mockProject: Project = {
                 id: "project-123",
                 userId: "user-123",
                 name: "Test Project",
@@ -82,7 +86,7 @@ describe("Conversation Queries", () => {
                 updatedAt: new Date(),
             };
 
-            const mockConversation = {
+            const mockConversation: Conversation = {
                 id: "conv-123",
                 userId: "user-123",
                 providerId: "openai",
@@ -96,8 +100,8 @@ describe("Conversation Queries", () => {
                 updatedAt: new Date(),
             };
 
-            mockPrisma.project.findUnique.mockResolvedValue(mockProject as any);
-            mockPrisma.conversation.create.mockResolvedValue(mockConversation as any);
+            mockPrisma.project.findUnique.mockResolvedValue(mockProject);
+            mockPrisma.conversation.create.mockResolvedValue(mockConversation);
 
             await createConversation("user-123", "openai", "gpt-4o", {
                 projectId: "project-123",
@@ -109,7 +113,7 @@ describe("Conversation Queries", () => {
         });
 
         it("throws error when project belongs to different user", async () => {
-            const mockProject = {
+            const mockProject: Project = {
                 id: "project-123",
                 userId: "different-user",
                 name: "Other Project",
@@ -118,7 +122,7 @@ describe("Conversation Queries", () => {
                 updatedAt: new Date(),
             };
 
-            mockPrisma.project.findUnique.mockResolvedValue(mockProject as any);
+            mockPrisma.project.findUnique.mockResolvedValue(mockProject);
 
             await expect(
                 createConversation("user-123", "openai", "gpt-4o", {
@@ -138,7 +142,7 @@ describe("Conversation Queries", () => {
         });
 
         it("stores systemPrompt when provided", async () => {
-            const mockConversation = {
+            const mockConversation: Conversation = {
                 id: "conv-123",
                 userId: "user-123",
                 providerId: "openai",
@@ -152,7 +156,7 @@ describe("Conversation Queries", () => {
                 updatedAt: new Date(),
             };
 
-            mockPrisma.conversation.create.mockResolvedValue(mockConversation as any);
+            mockPrisma.conversation.create.mockResolvedValue(mockConversation);
 
             await createConversation("user-123", "openai", "gpt-4o", {
                 systemPrompt: "You are a helpful assistant",
@@ -174,19 +178,45 @@ describe("Conversation Queries", () => {
 
     describe("getConversationWithMessages", () => {
         it("returns conversation with messages for owner", async () => {
-            const mockConversation = {
+            const mockConversation: ConversationWithMessages = {
                 id: "conv-123",
                 userId: "user-123",
                 providerId: "openai",
                 modelId: "gpt-4o",
                 title: "Test Chat",
+                projectId: null,
+                folderId: null,
+                systemPrompt: null,
+                archivedAt: null,
+                createdAt: new Date(),
+                updatedAt: new Date(),
                 messages: [
-                    { id: "msg-1", role: "user", content: "Hello", conversationId: "conv-123" },
-                    { id: "msg-2", role: "assistant", content: "Hi there", conversationId: "conv-123" },
+                    {
+                        id: "msg-1",
+                        role: "user",
+                        content: "Hello",
+                        conversationId: "conv-123",
+                        modelId: null,
+                        providerId: null,
+                        tokenCount: null,
+                        cost: null,
+                        createdAt: new Date(),
+                    },
+                    {
+                        id: "msg-2",
+                        role: "assistant",
+                        content: "Hi there",
+                        conversationId: "conv-123",
+                        modelId: null,
+                        providerId: null,
+                        tokenCount: null,
+                        cost: null,
+                        createdAt: new Date(),
+                    },
                 ],
             };
 
-            mockPrisma.conversation.findUnique.mockResolvedValue(mockConversation as any);
+            mockPrisma.conversation.findUnique.mockResolvedValue(mockConversation);
 
             const result = await getConversationWithMessages("conv-123", "user-123");
 
@@ -208,16 +238,22 @@ describe("Conversation Queries", () => {
 
     describe("updateConversation", () => {
         it("verifies conversation ownership before update", async () => {
-            const mockConversation = {
+            const mockConversation: Conversation = {
                 id: "conv-123",
                 userId: "user-123",
                 providerId: "openai",
                 modelId: "gpt-4o",
                 title: "Old Title",
+                projectId: null,
+                folderId: null,
+                systemPrompt: null,
+                archivedAt: null,
+                createdAt: new Date(),
+                updatedAt: new Date(),
             };
 
-            mockPrisma.conversation.findUnique.mockResolvedValue(mockConversation as any);
-            mockPrisma.conversation.update.mockResolvedValue({ ...mockConversation, title: "New Title" } as any);
+            mockPrisma.conversation.findUnique.mockResolvedValue(mockConversation);
+            mockPrisma.conversation.update.mockResolvedValue({ ...mockConversation, title: "New Title" });
 
             await updateConversation("conv-123", "user-123", { title: "New Title" });
 
@@ -227,15 +263,21 @@ describe("Conversation Queries", () => {
         });
 
         it("throws error when updating conversation belonging to different user", async () => {
-            const mockConversation = {
+            const mockConversation: Conversation = {
                 id: "conv-123",
                 userId: "different-user",
                 providerId: "openai",
                 modelId: "gpt-4o",
                 title: "Test",
+                projectId: null,
+                folderId: null,
+                systemPrompt: null,
+                archivedAt: null,
+                createdAt: new Date(),
+                updatedAt: new Date(),
             };
 
-            mockPrisma.conversation.findUnique.mockResolvedValue(mockConversation as any);
+            mockPrisma.conversation.findUnique.mockResolvedValue(mockConversation);
 
             await expect(
                 updateConversation("conv-123", "user-123", { title: "New Title" })
@@ -243,24 +285,32 @@ describe("Conversation Queries", () => {
         });
 
         it("verifies project ownership when changing projectId", async () => {
-            const mockConversation = {
+            const mockConversation: Conversation = {
                 id: "conv-123",
                 userId: "user-123",
                 providerId: "openai",
                 modelId: "gpt-4o",
                 title: "Test",
                 projectId: null,
+                folderId: null,
+                systemPrompt: null,
+                archivedAt: null,
+                createdAt: new Date(),
+                updatedAt: new Date(),
             };
 
-            const mockProject = {
+            const mockProject: Project = {
                 id: "project-123",
                 userId: "user-123",
                 name: "Test Project",
+                color: "#7c6dff",
+                createdAt: new Date(),
+                updatedAt: new Date(),
             };
 
-            mockPrisma.conversation.findUnique.mockResolvedValue(mockConversation as any);
-            mockPrisma.project.findUnique.mockResolvedValue(mockProject as any);
-            mockPrisma.conversation.update.mockResolvedValue({ ...mockConversation, projectId: "project-123" } as any);
+            mockPrisma.conversation.findUnique.mockResolvedValue(mockConversation);
+            mockPrisma.project.findUnique.mockResolvedValue(mockProject);
+            mockPrisma.conversation.update.mockResolvedValue({ ...mockConversation, projectId: "project-123" });
 
             await updateConversation("conv-123", "user-123", { projectId: "project-123" });
 
@@ -270,23 +320,31 @@ describe("Conversation Queries", () => {
         });
 
         it("throws error when assigning to project belonging to different user", async () => {
-            const mockConversation = {
+            const mockConversation: Conversation = {
                 id: "conv-123",
                 userId: "user-123",
                 providerId: "openai",
                 modelId: "gpt-4o",
                 title: "Test",
                 projectId: null,
+                folderId: null,
+                systemPrompt: null,
+                archivedAt: null,
+                createdAt: new Date(),
+                updatedAt: new Date(),
             };
 
-            const mockProject = {
+            const mockProject: Project = {
                 id: "project-123",
                 userId: "different-user",
                 name: "Other Project",
+                color: "#7c6dff",
+                createdAt: new Date(),
+                updatedAt: new Date(),
             };
 
-            mockPrisma.conversation.findUnique.mockResolvedValue(mockConversation as any);
-            mockPrisma.project.findUnique.mockResolvedValue(mockProject as any);
+            mockPrisma.conversation.findUnique.mockResolvedValue(mockConversation);
+            mockPrisma.project.findUnique.mockResolvedValue(mockProject);
 
             await expect(
                 updateConversation("conv-123", "user-123", { projectId: "project-123" })
@@ -296,16 +354,22 @@ describe("Conversation Queries", () => {
 
     describe("deleteConversation", () => {
         it("verifies ownership before deletion", async () => {
-            const mockConversation = {
+            const mockConversation: Conversation = {
                 id: "conv-123",
                 userId: "user-123",
                 providerId: "openai",
                 modelId: "gpt-4o",
                 title: "Test",
+                projectId: null,
+                folderId: null,
+                systemPrompt: null,
+                archivedAt: null,
+                createdAt: new Date(),
+                updatedAt: new Date(),
             };
 
-            mockPrisma.conversation.findUnique.mockResolvedValue(mockConversation as any);
-            mockPrisma.conversation.delete.mockResolvedValue(mockConversation as any);
+            mockPrisma.conversation.findUnique.mockResolvedValue(mockConversation);
+            mockPrisma.conversation.delete.mockResolvedValue(mockConversation);
 
             await deleteConversation("conv-123", "user-123");
 
@@ -315,15 +379,21 @@ describe("Conversation Queries", () => {
         });
 
         it("throws error when deleting conversation belonging to different user", async () => {
-            const mockConversation = {
+            const mockConversation: Conversation = {
                 id: "conv-123",
                 userId: "different-user",
                 providerId: "openai",
                 modelId: "gpt-4o",
                 title: "Test",
+                projectId: null,
+                folderId: null,
+                systemPrompt: null,
+                archivedAt: null,
+                createdAt: new Date(),
+                updatedAt: new Date(),
             };
 
-            mockPrisma.conversation.findUnique.mockResolvedValue(mockConversation as any);
+            mockPrisma.conversation.findUnique.mockResolvedValue(mockConversation);
 
             await expect(
                 deleteConversation("conv-123", "user-123")

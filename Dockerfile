@@ -70,7 +70,7 @@ ENV HOSTNAME="0.0.0.0"
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/providers || exit 1
+  CMD node -e "fetch('http://localhost:3000/api/health', { redirect: 'error', signal: AbortSignal.timeout(8000) }).then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 
 # Start the application
 CMD ["node", "server.js"]

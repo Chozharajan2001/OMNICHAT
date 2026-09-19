@@ -2,6 +2,7 @@ import crypto from "crypto";
 
 const ALGORITHM = "aes-256-gcm" as const;
 const IV_LENGTH = 16;
+const AUTH_TAG_LENGTH = 16;
 
 function getEncryptionKey(): Buffer {
     const secret = process.env.ENCRYPTION_SECRET_KEY;
@@ -20,7 +21,9 @@ function getEncryptionKey(): Buffer {
 /**
  * Encrypts a plain‑text API key using AES‑256‑GCM.
  *
- * Return format: `iv:ciphertext:authTag` (all hex strings).
+ * @param plainKey - UTF-8 key to encrypt; empty input is supported.
+ * @returns `iv:ciphertext:authTag` as hex, with a random 16-byte IV and 16-byte tag.
+ * @throws If ENCRYPTION_SECRET_KEY is missing or shorter than 32 characters.
  */
 export function encryptApiKey(plainKey: string): string {
     const key = getEncryptionKey();
@@ -42,7 +45,10 @@ export function encryptApiKey(plainKey: string): string {
 /**
  * Decrypts an AES‑256‑GCM encrypted API key.
  *
- * Input must be the format produced by `encryptApiKey`.
+ * @param encryptedData - Three colon-separated, even-length hexadecimal fields
+ * produced by `encryptApiKey`; uppercase hex is also accepted.
+ * @returns Authenticated plaintext decoded as UTF-8.
+ * @throws For malformed input, an invalid secret, or failed authentication.
  */
 export function decryptApiKey(encryptedData: string): string {
     const parts = encryptedData.split(":");
@@ -51,12 +57,24 @@ export function decryptApiKey(encryptedData: string): string {
     }
 
     const [ivHex, encryptedHex, authTagHex] = parts;
+    // Buffer.from(..., "hex") silently truncates invalid or odd-length input.
+    // Validate before decoding; an empty ciphertext represents empty plaintext.
+    if (
+        ivHex.length !== IV_LENGTH * 2 ||
+        authTagHex.length !== AUTH_TAG_LENGTH * 2 ||
+        parts.some((part) => part.length % 2 !== 0 || !/^[0-9a-f]*$/i.test(part))
+    ) {
+        throw new Error("Invalid encrypted data format");
+    }
+
     const iv = Buffer.from(ivHex, "hex");
     const encrypted = Buffer.from(encryptedHex, "hex");
     const authTag = Buffer.from(authTagHex, "hex");
 
     const key = getEncryptionKey();
-    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv, {
+        authTagLength: AUTH_TAG_LENGTH,
+    });
     decipher.setAuthTag(authTag);
 
     const decrypted = Buffer.concat([
@@ -68,7 +86,10 @@ export function decryptApiKey(encryptedData: string): string {
 
 /**
  * Returns a short hint of the API key (last 4 characters prefixed with "...")
- * for UI display. Returns "****" if key is very short.
+ * for UI display.
+ * @param plainKey - Key whose hint will be displayed; never log the full value.
+ * @returns "****" for keys of at most 8 UTF-16 code units, otherwise the last 4
+ * code units prefixed with "...".
  */
 export function getKeyHint(plainKey: string): string {
     if (plainKey.length <= 8) {

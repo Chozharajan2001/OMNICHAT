@@ -9,7 +9,7 @@ services:
     dockerfilePath: ./Dockerfile
     dockerContext: .
     plan: starter
-    healthCheckPath: /api/providers
+    healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production

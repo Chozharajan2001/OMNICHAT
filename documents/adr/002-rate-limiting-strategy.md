@@ -4,121 +4,89 @@
 Accepted
 
 ## Context
-OmniChat needs rate limiting to prevent abuse and ensure fair resource usage across multiple endpoints:
-- Authentication attempts (5 per 15 minutes per IP)
-- API key validation (10 per minute per user)
-- Chat messages (60 per minute per user)
-- Write operations (30 per minute per user)
-
-The rate limiting solution must:
-- Work in both single-instance and distributed deployments
-- Minimize memory usage
-- Provide accurate tracking per user/IP
-- Support automatic cleanup of expired entries
+OmniChat uses rate limiting to reduce abuse on selected authentication and API paths. The current implementation favors in-process storage and bounded memory without an external service; it does not provide distributed enforcement or universal endpoint coverage.
 
 ## Decision
-Implement in-memory rate limiting with LRU (Least Recently Used) eviction and automatic cleanup.
+Use an in-memory fixed-window counter with expiry cleanup and LRU (Least Recently Used) eviction.
 
 ### Implementation Details
-- **Storage**: JavaScript `Map` for O(1) lookups
-- **Eviction Policy**: LRU based on `lastAccessed` timestamp
-- **Max Store Size**: 10,000 entries (configurable)
-- **Cleanup Interval**: Every 60 seconds, remove expired entries
-- **Algorithm**: Sliding window counter
-
-### Code Structure
-```typescript
-interface RateLimitEntry {
-  count: number;
-  resetTime: number;
-  lastAccessed: number; // For LRU eviction
-}
-
-class RateLimiter {
-  private store = new Map<string, RateLimitEntry>();
-  
-  check(identifier: string): RateLimitResult {
-    // 1. Check if entry exists and is within window
-    // 2. If not, create new entry with count=1
-    // 3. If exists, increment count
-    // 4. Enforce store size cap with LRU eviction
-    // 5. Return limit status, remaining requests, reset time
-  }
-}
-```
+- **Storage**: One module-level JavaScript `Map`, shared by limiter instances in that process. Key prefixes separate policies, not storage capacity.
+- **API**: [createRateLimiter](../../src/lib/rate-limit.ts) returns `check` and `reset` functions, not a class with its own store.
+- **Algorithm**: A new identifier starts a fixed window at the first check, with `count = 1` and `resetTime = now + windowMs`. Later checks do not move the reset time; this is not a sliding window.
+- **Counting**: Allowed checks increment the count. Blocked checks do not increment it, but both refresh `lastAccessed`. Checks return limit status, remaining requests, reset time in milliseconds, and retry delay in seconds.
+- **Expiry**: A checked entry is replaced only when its reset time is strictly earlier than the current time; equality still uses the old window. `reset(identifier)` deletes that key immediately.
+- **Capacity**: `maxStoreSize` defaults to 10,000 entries and is configurable per limiter, but applies to the shared store, not a separate per-endpoint allocation.
 
 ### Eviction Strategy
-1. **First Pass**: Remove expired entries (cheap cleanup)
-2. **Second Pass**: If still over limit, evict by `lastAccessed` (LRU)
-3. **Interval Cleanup**: Background task removes expired entries every 60s
+1. **On Insertion**: Only an absent key triggers eviction, before insertion, when the shared store is at or above that limiter's threshold.
+2. **Expired Entries First**: Scan and remove expired entries, stopping as soon as the store is below the threshold.
+3. **LRU Fallback**: If still at or above the threshold, scan for the smallest `lastAccessed` timestamp and remove one entry. This is not a loop that guarantees a smaller configured cap if the shared store is already above it.
+4. **Interval Cleanup**: A timer scheduled every 60 seconds scans all entries and removes those whose reset time is strictly earlier than now. It is unreferenced in Node.js so it does not keep the process alive; expiration is also handled lazily on checks.
 
 ## Consequences
 
 ### Positive
-- **Zero Dependencies**: No external services required
-- **Low Latency**: O(1) lookups, no network calls
-- **Memory Efficient**: LRU eviction prevents unbounded growth
-- **Simple Deployment**: Works out-of-the-box
-- **Configurable**: Rate limits and store size adjustable per endpoint
+- **No External Service**: Checks use local memory, without network calls
+- **Low-Cost Lookups**: Ordinary map lookups are O(1); cleanup and LRU scans are O(n)
+- **Memory Control**: Expiry cleanup and insertion-time eviction limit growth with the current shared default threshold
+- **Configurable Policies**: Window length, request allowance, identifier key generation, and eviction threshold are configurable in code
 
 ### Negative
-- **Single Instance**: State lost on server restart
-- **No Distributed State**: Each instance tracks independently
-- **Memory Usage**: 10k entries ≈ 1-2 MB (acceptable)
-- **Clock Skew**: Relies on server time (mitigated by using `Date.now()`)
+- **Per-Process Only**: Workers, server processes, and serverless instances track independently; restarts lose state. There is no deployment-wide quota.
+- **Boundary Bursts**: Requests can cluster at the end of one fixed window and the start of the next
+- **Eviction Weakens Enforcement**: Evicting an active identifier discards its counter and permits a fresh window on its next check
+- **Shared Capacity**: Policies compete for the same store; configurable thresholds are not isolated per-limiter hard caps
+- **Clock Dependence**: `Date.now()` uses wall-clock time and does not prevent clock adjustments from affecting windows
+- **IP Trust**: IP-based enforcement requires a trusted proxy to overwrite client-supplied forwarding headers; missing headers group callers under `unknown`
 
-### Production Considerations
-For distributed deployments (multiple instances):
-- **Current**: Each instance has independent rate limits
-- **Future**: Migrate to Redis for shared state
-- **Migration Path**: Interface abstraction allows easy swap
+### Deployment Considerations
+Distributed enforcement would require a shared backend and atomic operations. Redis is a possible future option, not an implemented backend or a ready-made swap: network access would require changes to the current synchronous checks and their callers.
 
 ## Alternatives Considered
 
-### Redis-based Rate Limiting
-- **Pros**: Distributed state, persistent, atomic operations
-- **Cons**: Additional infrastructure, network latency, operational complexity
-- **Verdict**: Deferred to Phase 4+ when scaling requires it
-
 ### Fixed Window Counter
-- **Pros**: Simpler implementation
-- **Cons**: Burst at window boundaries (e.g., 100 requests at 11:59, 100 at 12:00)
-- **Verdict**: Rejected due to burst vulnerability
+- **Selected**: Simple counters and expiry; accepts boundary bursts rather than smoothing them
+
+### Redis-based Rate Limiting
+- **Tradeoff**: Shared state and atomic operations require additional infrastructure and network access
+- **Status**: Not implemented; no Phase 4 delivery guarantee
 
 ### Token Bucket
-- **Pros**: Smooth rate limiting, allows bursts
-- **Cons**: More complex, requires background refills
-- **Verdict**: Rejected for simplicity; sliding window sufficient
+- **Tradeoff**: Controls refill rate and burst capacity; can refill lazily rather than requiring a background timer
+- **Status**: Not implemented
 
-### Sliding Window Log
-- **Pros**: Most accurate
-- **Cons**: High memory usage (stores every request)
-- **Verdict**: Rejected due to memory overhead
+### Sliding Window Counter or Log
+- **Tradeoff**: Tracks a moving window; a log additionally stores individual request timestamps
+- **Status**: Neither is implemented by the current fixed-window counter
 
-## Rate Limit Tiers
+## Rate Limit Tiers and Actual Callers
 
-| Endpoint | Limit | Window | Rationale |
-|----------|-------|--------|-----------|
-| Auth | 5 | 15 min | Prevent brute force |
-| API Key Validation | 10 | 1 min | Prevent key guessing |
-| Chat | 60 | 1 min | Fair usage, prevent abuse |
-| Write Operations | 30 | 1 min | Prevent spam |
-| Delete Operations | 5 | 1 min | Prevent accidental mass deletion |
+| Caller | Limit | Window | Identifier |
+|--------|-------|--------|------------|
+| [Credentials authorization](../../src/lib/auth/config.ts) | 5 | 15 min | IP, after checking that credentials are present |
+| [POST /api/api-keys](../../src/app/api/api-keys/route.ts) | 10 | 1 min | IP, before handler authentication, even when provider validation is skipped |
+| [POST /api/chat](../../src/app/api/chat/route.ts) | 60 | 1 min | Authenticated user ID |
+| [POST /api/projects](../../src/app/api/projects/route.ts) | 30 | 1 min | Authenticated user ID |
 
-## Monitoring
-- **Headers**: All rate-limited responses include:
-  - `X-RateLimit-Limit`: Maximum requests
-  - `X-RateLimit-Remaining`: Remaining requests
-  - `X-RateLimit-Reset`: Unix timestamp when limit resets
-- **429 Responses**: Include `Retry-After` header
+These checks count attempts reaching them, including requests that later fail validation. Credentials authorization prefers the first `X-Forwarded-For` value, then `X-Real-IP`; the API-key route's `getClientIp` helper prefers `X-Real-IP`, then the first `X-Forwarded-For` value.
+
+This is not a universal auth, write, or delete policy: OAuth does not use the credentials limiter, and the write limiter is attached only to project creation. The 5-per-minute delete values in [constants](../../src/lib/constants.ts) are not wired into a delete limiter or route.
+
+## Monitoring and Response Headers
+`getRateLimitHeaders` produces `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset` (reset time rounded up to Unix seconds). Callers must attach them explicitly:
+
+| Caller | Successful response | Limiter rejection |
+|--------|---------------------|-------------------|
+| Chat POST | All three rate-limit headers on the streaming response | 429 with all three headers and `Retry-After` |
+| API-key POST | No rate-limit headers | 429 with all three headers and `Retry-After` |
+| Project POST | All three headers on 201 | 429 with all three headers, but no `Retry-After` |
+| Credentials authorization | No custom rate-limit headers | Returns `null`; no custom 429 or rate-limit headers |
+
+`Retry-After`, where attached, is a delay in seconds. Other error paths generally omit rate-limit headers, even if a check has already consumed an allowance. The shared [rateLimitResponse helper](../../src/lib/api/middleware.ts) does not automatically enforce limits or attach headers to routes.
 
 ## Future Enhancements
-1. **Redis Backend**: Swap `Map` for Redis when scaling horizontally
-2. **Adaptive Rate Limiting**: Adjust limits based on server load
-3. **Rate Limit Analytics**: Track abuse patterns
-4. **Distributed Tracing**: Add correlation IDs for cross-instance tracking
+A shared backend, adaptive limits, and rate-limit analytics are possible future work, not capabilities of the current limiter.
 
 ## References
 - [OWASP Rate Limiting](https://cheatsheetseries.owasp.org/cheatsheets/Denial_of_Service_Cheat_Sheet.html)
-- [Sliding Window Algorithm](https://blog.cloudflare.com/counting-things-a-lot-of-different-things/)
 - [LRU Eviction](https://en.wikipedia.org/wiki/Cache_replacement_policies#LRU)

@@ -1,38 +1,37 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Prisma, User } from "@prisma/client";
+import type { authRateLimiter } from "@/lib/rate-limit";
 
-// Mock prisma before importing auth config
-vi.mock("@/lib/db/prisma", () => ({
-    prisma: {
-        user: {
-            findUnique: vi.fn(),
-            create: vi.fn(),
-        },
+type AuthUser = Pick<User, "id" | "email" | "name" | "passwordHash">;
+
+// Use concrete query signatures rather than casting generic Prisma methods.
+const mockPrisma = vi.hoisted(() => ({
+    user: {
+        findUnique: vi.fn<(args: Prisma.UserFindUniqueArgs) => Promise<AuthUser | null>>(),
+        create: vi.fn<(args: Prisma.UserCreateArgs) => Promise<User>>(),
     },
 }));
+
+vi.mock("@/lib/db/prisma", () => ({ prisma: mockPrisma }));
 
 // Mock rate limiter
-vi.mock("@/lib/rate-limit", () => ({
-    authRateLimiter: {
-        check: vi.fn().mockReturnValue({ limited: false, remaining: 5, resetTime: 0, retryAfter: 0 }),
-        reset: vi.fn(),
-    },
+const mockRateLimiter = vi.hoisted(() => ({
+    check: vi.fn<typeof authRateLimiter.check>()
+        .mockReturnValue({ limited: false, remaining: 5, resetTime: 0, retryAfter: 0 }),
+    reset: vi.fn<typeof authRateLimiter.reset>(),
 }));
 
-import { prisma } from "@/lib/db/prisma";
-import { authRateLimiter } from "@/lib/rate-limit";
-
-const mockPrisma = vi.mocked(prisma);
-const mockRateLimiter = vi.mocked(authRateLimiter);
+vi.mock("@/lib/rate-limit", () => ({ authRateLimiter: mockRateLimiter }));
 
 describe("Auth Configuration", () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        // Reset environment variables
-        process.env.NODE_ENV = "development";
-        delete process.env.DESKTOP_MODE;
+        vi.stubEnv("NODE_ENV", "development");
+        vi.stubEnv("DESKTOP_MODE", undefined);
     });
 
     afterEach(() => {
+        vi.unstubAllEnvs();
         vi.restoreAllMocks();
     });
 
@@ -72,7 +71,7 @@ describe("Auth Configuration", () => {
 
     describe("Auto-creation Gates", () => {
         it("allows user creation in development mode", () => {
-            process.env.NODE_ENV = "development";
+            vi.stubEnv("NODE_ENV", "development");
             const isDesktopMode = process.env.DESKTOP_MODE === "true";
             const isDev = process.env.NODE_ENV === "development";
 
@@ -80,8 +79,8 @@ describe("Auth Configuration", () => {
         });
 
         it("allows user creation in desktop mode", () => {
-            process.env.NODE_ENV = "production";
-            process.env.DESKTOP_MODE = "true";
+            vi.stubEnv("NODE_ENV", "production");
+            vi.stubEnv("DESKTOP_MODE", "true");
             const isDesktopMode = process.env.DESKTOP_MODE === "true";
             const isDev = process.env.NODE_ENV === "development";
 
@@ -89,8 +88,8 @@ describe("Auth Configuration", () => {
         });
 
         it("blocks user creation in production without desktop mode", () => {
-            process.env.NODE_ENV = "production";
-            delete process.env.DESKTOP_MODE;
+            vi.stubEnv("NODE_ENV", "production");
+            vi.stubEnv("DESKTOP_MODE", undefined);
             const isDesktopMode = process.env.DESKTOP_MODE === "true";
             const isDev = process.env.NODE_ENV === "development";
 
@@ -100,7 +99,7 @@ describe("Auth Configuration", () => {
 
     describe("Rate Limiting", () => {
         it("checks rate limit before authentication", async () => {
-            const checkMock = vi.mocked(mockRateLimiter.check);
+            const checkMock = mockRateLimiter.check;
             checkMock.mockReturnValue({ limited: false, remaining: 5, resetTime: 0, retryAfter: 0 });
 
             const result = mockRateLimiter.check("127.0.0.1");
@@ -109,7 +108,7 @@ describe("Auth Configuration", () => {
         });
 
         it("blocks authentication when rate limited", async () => {
-            const checkMock = vi.mocked(mockRateLimiter.check);
+            const checkMock = mockRateLimiter.check;
             checkMock.mockReturnValue({ limited: true, remaining: 0, resetTime: 0, retryAfter: 60 });
 
             const result = mockRateLimiter.check("127.0.0.1");
@@ -120,14 +119,14 @@ describe("Auth Configuration", () => {
 
     describe("User Lookup", () => {
         it("finds existing user by email", async () => {
-            const mockUser = {
+            const mockUser: AuthUser = {
                 id: "user-123",
                 email: "test@example.com",
                 name: "Test User",
                 passwordHash: "hashed-password",
             };
 
-            mockPrisma.user.findUnique.mockResolvedValue(mockUser as any);
+            mockPrisma.user.findUnique.mockResolvedValue(mockUser);
 
             const user = await mockPrisma.user.findUnique({
                 where: { email: "test@example.com" },
