@@ -25,6 +25,7 @@ import {
 import { chatRequestSchema } from "@/lib/validators/schemas";
 import { chatRateLimiter, getRateLimitHeaders } from "@/lib/rate-limit";
 import { prisma } from "@/lib/db/prisma";
+import { recordChatMessage } from "@/lib/metrics";
 
 export const maxDuration = 60; // Allow up to 60 seconds for streaming
 
@@ -159,6 +160,7 @@ export async function POST(req: Request) {
         }
 
         // 9. Stream response
+        const startTime = Date.now();
         const result = streamText({
             model,
             messages: preparedMessages.map((m) => ({
@@ -170,6 +172,19 @@ export async function POST(req: Request) {
 
             // Called when streaming completes successfully
             onFinish: async ({ text, usage }) => {
+                const durationMs = Date.now() - startTime;
+                
+                // Record chat metrics
+                if (usage) {
+                    recordChatMessage(
+                        providerId,
+                        modelId,
+                        usage.inputTokens ?? 0,
+                        usage.outputTokens ?? 0,
+                        durationMs
+                    );
+                }
+
                 if (privateMode || !conversationId) {
                     return;
                 }
