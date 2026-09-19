@@ -1,4 +1,4 @@
-import { createCipheriv, createHash, pbkdf2Sync } from "node:crypto";
+import { createCipheriv, createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { decryptApiKey, encryptApiKey, getKeyHint, migrateToPBKDF2 } from "./vault";
 

@@ -4,7 +4,6 @@ import {
     getModel,
     getProvider,
     SUPPORTED_PROVIDERS,
-    type ModelDefinition,
 } from "../providers";
 
 describe("getModel", () => {

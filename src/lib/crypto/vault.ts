@@ -34,21 +34,6 @@ function deriveKeyWithSHA256(secret: string): Buffer {
     return crypto.createHash("sha256").update(secret).digest();
 }
 
-function getEncryptionKey(): Buffer {
-    const secret = process.env.ENCRYPTION_SECRET_KEY;
-    if (!secret) {
-        throw new Error("Missing ENCRYPTION_SECRET_KEY environment variable");
-    }
-    if (secret.length < 32) {
-        throw new Error(
-            "ENCRYPTION_SECRET_KEY must be at least 32 characters. Generate one with: openssl rand -base64 32"
-        );
-    }
-    // For new encryptions, we'll use PBKDF2 with salt
-    // This function is kept for backward compatibility but new code should use deriveKeyWithPBKDF2
-    return deriveKeyWithSHA256(secret);
-}
-
 /**
  * Encrypts a plain-text API key using AES-256-GCM with PBKDF2 key derivation.
  * 

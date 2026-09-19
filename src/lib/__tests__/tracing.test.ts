@@ -116,10 +116,11 @@ describe("Tracer", () => {
       
       const exported = tracer.exportSpans();
       expect(exported).toHaveProperty("spans");
-      expect(Array.isArray((exported as any).spans)).toBe(true);
-      expect((exported as any).spans).toHaveLength(1);
+      const exportedObj = exported as { spans: unknown[] };
+      expect(Array.isArray(exportedObj.spans)).toBe(true);
+      expect(exportedObj.spans).toHaveLength(1);
       
-      const span = (exported as any).spans[0];
+      const span = exportedObj.spans[0] as Record<string, unknown>;
       expect(span).toHaveProperty("traceId");
       expect(span).toHaveProperty("spanId");
       expect(span).toHaveProperty("operationName", "test.operation");
