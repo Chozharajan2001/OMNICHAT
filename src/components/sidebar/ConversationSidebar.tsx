@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useJsonResource } from "@/hooks/useJsonResource";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useChatStore, type Conversation } from "@/stores/chat-store";
@@ -47,44 +48,20 @@ export function ConversationSidebar() {
     } = useChatStore();
     const { success, error: toastError } = useToast();
 
-    const [conversations, setConversations] = useState<Conversation[]>([]);
-    const [projects, setProjects] = useState<ProjectItem[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [isLoadingProjects, setIsLoadingProjects] = useState(true);
+    const { data: conversationData, loading: isLoading, refresh: fetchConversations, setData: setConversationData } =
+        useJsonResource<{ conversations: Conversation[] }>("/api/conversations", "Failed to fetch conversations", pathname);
+    const { data: projectData, loading: isLoadingProjects, refresh: fetchProjects } =
+        useJsonResource<{ projects: ProjectItem[] }>("/api/projects", "Failed to fetch projects", pathname);
+    const conversations = useMemo(() => conversationData?.conversations ?? [], [conversationData]);
+    const projects = projectData?.projects ?? [];
+    const setConversations = (update: (previous: Conversation[]) => Conversation[]) =>
+        setConversationData((current) => ({ conversations: update(current?.conversations ?? []) }));
     const [isDesktop, setIsDesktop] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
     const [newProjectName, setNewProjectName] = useState("");
     const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<{ type: "conversation" | "project"; id: string } | null>(null);
     const sidebarDefaultState = usePersonalizationStore((state) => state.sidebarDefaultState);
-
-    const fetchConversations = useCallback(async () => {
-        try {
-            const response = await fetch("/api/conversations");
-            if (response.ok) {
-                const data = await response.json();
-                setConversations(data.conversations || []);
-            }
-        } catch (error) {
-            console.error("Failed to fetch conversations:", error);
-        } finally {
-            setIsLoading(false);
-        }
-    }, []);
-
-    const fetchProjects = useCallback(async () => {
-        try {
-            const response = await fetch("/api/projects");
-            if (response.ok) {
-                const data = await response.json();
-                setProjects(data.projects || []);
-            }
-        } catch (error) {
-            console.error("Failed to fetch projects:", error);
-        } finally {
-            setIsLoadingProjects(false);
-        }
-    }, []);
 
     useEffect(() => {
         const mediaQuery = window.matchMedia("(min-width: 1024px)");
@@ -107,11 +84,6 @@ export function ConversationSidebar() {
             mediaQuery.removeEventListener("change", applyViewportMode);
         };
     }, [setSidebarOpen, sidebarDefaultState]);
-
-    useEffect(() => {
-        void fetchConversations();
-        void fetchProjects();
-    }, [fetchConversations, fetchProjects, pathname]);
 
     useEffect(() => {
         if (!isDesktop) {

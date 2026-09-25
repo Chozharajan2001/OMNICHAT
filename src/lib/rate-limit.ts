@@ -1,127 +1,125 @@
-/**
- * Simple in-memory rate limiter for OmniChat
- * For production, consider using Upstash Redis or similar
- * 
- * DEPLOYMENT NOTE: When behind a reverse proxy (nginx, Cloudflare, etc.),
- * ensure the proxy sets X-Real-IP header and strips spoofed X-Forwarded-For
- * from client requests. This implementation trusts X-Real-IP over X-Forwarded-For
- * to prevent IP spoofing attacks.
- */
+import { createRedisRestBackend, resolveRateLimitBackend } from "./rate-limit-redis-rest";
+
+export {
+  RateLimitBackendUnavailableError,
+  isRateLimitBackendUnavailableError,
+  type RateLimitBackendFailure,
+} from "./rate-limit-redis-rest";
 
 interface RateLimitEntry {
   count: number;
   resetTime: number;
-  lastAccessed: number; // Track last access time for LRU eviction
+  lastAccessed: number;
 }
 
-interface RateLimitConfig {
-  windowMs: number; // Time window in milliseconds
-  maxRequests: number; // Maximum requests per window
+export interface RateLimitConfig {
+  windowMs: number;
+  maxRequests: number;
+  // Use a stable namespace (e.g., auth:identifier) shared by every worker.
   keyGenerator?: (identifier: string) => string;
-  maxStoreSize?: number; // Maximum number of entries before LRU eviction (default: 10000)
+  maxStoreSize?: number; // Memory mode only (default: 10000)
 }
 
-// In-memory store (resets on server restart)
+export interface RateLimitResult {
+  limited: boolean;
+  remaining: number;
+  resetTime: number; // Absolute Unix time in milliseconds
+  retryAfter: number; // Whole seconds, rounded up
+}
+
+export interface RateLimiter {
+  check(identifier: string): Promise<RateLimitResult>;
+  reset(identifier: string): Promise<void>;
+}
+
+// Explicit local mode retains the shared process-local store and LRU behavior.
+// Expiration is lazy and capacity bounded; no background timers survive reloads.
 const store = new Map<string, RateLimitEntry>();
 const DEFAULT_MAX_STORE_SIZE = 10000;
 
-// Store interval ID for cleanup (prevents leak on hot reload)
-let cleanupIntervalId: ReturnType<typeof setInterval> | null = null;
-
-// Cleanup old entries every minute
-if (typeof setInterval !== "undefined" && !cleanupIntervalId) {
-  cleanupIntervalId = setInterval(() => {
-    const now = Date.now();
-    for (const [key, entry] of store.entries()) {
-      if (entry.resetTime < now) {
-        store.delete(key);
-      }
-    }
-  }, 60_000);
-  
-  // Allow Node.js to exit even if interval is active
-  if (typeof cleanupIntervalId.unref === "function") {
-    cleanupIntervalId.unref();
-  }
-}
-
-/**
- * Find and remove the oldest entry (LRU eviction).
- * Optimized to remove expired entries first, then evict by access time.
- */
 function evictOldestEntry(maxStoreSize: number): void {
   if (store.size < maxStoreSize) return;
-  
+
   const now = Date.now();
   let oldestKey: string | null = null;
   let oldestAccessTime = Infinity;
-  
-  // First pass: try to remove expired entries (cheap cleanup)
+
   for (const [key, entry] of store.entries()) {
     if (entry.resetTime < now) {
       store.delete(key);
-      // If we're now under the limit, we're done
       if (store.size < maxStoreSize) return;
     }
   }
-  
-  // Second pass: find oldest by lastAccessed time (LRU eviction)
+
   for (const [key, entry] of store.entries()) {
     if (entry.lastAccessed < oldestAccessTime) {
       oldestAccessTime = entry.lastAccessed;
       oldestKey = key;
     }
   }
-  
-  if (oldestKey) {
-    store.delete(oldestKey);
-  }
+
+  if (oldestKey !== null) store.delete(oldestKey);
 }
 
 /**
- * Create a rate limiter instance
+ * Synchronous factory, asynchronous operations. Each instance snapshots valid
+ * backend configuration on its first check/reset; imports do not connect to Redis.
+ * Both operations reject with RateLimitBackendUnavailableError on backend failure.
+ * No Redis failure ever falls back to the local store. Restart after config changes.
  */
-export function createRateLimiter(config: RateLimitConfig) {
+export function createRateLimiter(config: RateLimitConfig): RateLimiter {
   const { windowMs, maxRequests, keyGenerator, maxStoreSize = DEFAULT_MAX_STORE_SIZE } = config;
+  for (const [name, value] of Object.entries({ windowMs, maxRequests, maxStoreSize })) {
+    if (!Number.isSafeInteger(value) || value <= 0) {
+      throw new RangeError(`${name} must be a positive safe integer`);
+    }
+  }
+  if (windowMs > 2_147_483_647) {
+    throw new RangeError("windowMs must not exceed 2147483647 milliseconds");
+  }
+
+  let backend: { kind: "memory" } | {
+    kind: "redis-rest";
+    client: ReturnType<typeof createRedisRestBackend>;
+  } | undefined;
+
+  function getBackend() {
+    if (!backend) {
+      const resolved = resolveRateLimitBackend();
+      backend = resolved.backend === "memory"
+        ? { kind: "memory" }
+        : { kind: "redis-rest", client: createRedisRestBackend(resolved) };
+    }
+    return backend;
+  }
 
   return {
-    /**
-     * Check if a request should be rate limited
-     * @param identifier - Unique identifier (e.g., IP address, user ID)
-     * @returns Object with limit status
-     */
-    check(identifier: string): {
-      limited: boolean;
-      remaining: number;
-      resetTime: number;
-      retryAfter: number;
-    } {
+    async check(identifier: string): Promise<RateLimitResult> {
+      const selected = getBackend();
       const key = keyGenerator ? keyGenerator(identifier) : identifier;
-      const now = Date.now();
-      const entry = store.get(key);
-
-      // Enforce store size cap with optimized LRU eviction
-      if (!entry && store.size >= maxStoreSize) {
-        evictOldestEntry(maxStoreSize);
-      }
-
-      if (!entry || entry.resetTime < now) {
-        // New window
-        const resetTime = now + windowMs;
-        store.set(key, { count: 1, resetTime, lastAccessed: now });
+      if (selected.kind === "redis-rest") {
+        const { count, ttlMs, resetTime } = await selected.client.check(key, windowMs);
+        const limited = count > maxRequests;
         return {
-          limited: false,
-          remaining: maxRequests - 1,
+          limited,
+          remaining: Math.max(0, maxRequests - count),
           resetTime,
-          retryAfter: 0,
+          retryAfter: limited ? Math.max(1, Math.ceil(ttlMs / 1000)) : 0,
         };
       }
 
-      // Update last accessed time
-      entry.lastAccessed = now;
+      const now = Date.now();
+      const entry = store.get(key);
+      if (!entry && store.size >= maxStoreSize) evictOldestEntry(maxStoreSize);
 
+      if (!entry || entry.resetTime < now) {
+        const resetTime = now + windowMs;
+        store.set(key, { count: 1, resetTime, lastAccessed: now });
+        return { limited: false, remaining: maxRequests - 1, resetTime, retryAfter: 0 };
+      }
+
+      entry.lastAccessed = now;
       if (entry.count >= maxRequests) {
-        // Rate limited
         return {
           limited: true,
           remaining: 0,
@@ -130,7 +128,6 @@ export function createRateLimiter(config: RateLimitConfig) {
         };
       }
 
-      // Increment count
       entry.count++;
       return {
         limited: false,
@@ -140,12 +137,14 @@ export function createRateLimiter(config: RateLimitConfig) {
       };
     },
 
-    /**
-     * Reset the rate limit for an identifier
-     */
-    reset(identifier: string): void {
+    async reset(identifier: string): Promise<void> {
+      const selected = getBackend();
       const key = keyGenerator ? keyGenerator(identifier) : identifier;
-      store.delete(key);
+      if (selected.kind === "redis-rest") {
+        await selected.client.reset(key);
+      } else {
+        store.delete(key);
+      }
     },
   };
 }

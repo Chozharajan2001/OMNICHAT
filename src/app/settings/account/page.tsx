@@ -1,6 +1,5 @@
 import { auth } from "@/lib/auth/config";
-import { Button } from "@/components/ui/button";
-import { KeyRound, LogOut, Mail, UserRound } from "lucide-react";
+import { KeyRound, Mail, UserRound } from "lucide-react";
 import SignOutButton from "./SignOutButton";
 
 export default async function AccountSettingsPage() {

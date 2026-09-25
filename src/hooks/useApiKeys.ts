@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useJsonResource } from "./useJsonResource";
 
 interface ApiKey {
     id: string;
@@ -12,29 +12,10 @@ interface ApiKey {
 }
 
 export function useApiKeys() {
-    const [keys, setKeys] = useState<ApiKey[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-
-    const fetchKeys = useCallback(async () => {
-        setLoading(true);
-        try {
-            const res = await fetch("/api/api-keys");
-            if (!res.ok) throw new Error("Failed to fetch API keys");
-            const data = await res.json();
-            setKeys(data.keys);
-            setError(null);
-        } catch (e: unknown) {
-            const errorMessage = e instanceof Error ? e.message : "Failed to fetch API keys";
-            setError(errorMessage);
-        } finally {
-            setLoading(false);
-        }
-    }, []);
-
-    useEffect(() => {
-        fetchKeys();
-    }, [fetchKeys]);
+    const { data, loading, error, refresh: fetchKeys } = useJsonResource<{ keys: ApiKey[] }>(
+        "/api/api-keys", "Failed to fetch API keys"
+    );
+    const keys = data?.keys ?? [];
 
     const addKey = async (providerId: string, apiKey: string, validate: boolean = true) => {
         const res = await fetch("/api/api-keys", {

@@ -25,6 +25,19 @@ const LANGUAGE_OPTIONS: { value: AppLanguage; label: string; note: string }[] = 
 
 export default function PreferencesPage() {
     const { preferences, loading, error, updatePreferences } = usePreferences();
+    if (loading) {
+        return <p className="text-sm text-muted-foreground">Loading preferences...</p>;
+    }
+    if (error || !preferences) {
+        return <p className="text-sm text-destructive">Error: {error || "Preferences unavailable"}</p>;
+    }
+    return <PreferencesForm initialPreferences={preferences} updatePreferences={updatePreferences} />;
+}
+
+function PreferencesForm({ initialPreferences, updatePreferences }: {
+    initialPreferences: NonNullable<ReturnType<typeof usePreferences>["preferences"]>;
+    updatePreferences: ReturnType<typeof usePreferences>["updatePreferences"];
+}) {
     const {
         language,
         chatDensity,
@@ -36,55 +49,38 @@ export default function PreferencesPage() {
         setWelcomeMessage,
     } = usePersonalizationStore();
 
-    const [providerId, setProviderId] = useState("openai");
-    const [modelId, setModelId] = useState("");
-    const [defaultSystemPrompt, setDefaultSystemPrompt] = useState("");
-    const [theme, setTheme] = useState<"light" | "dark" | "system">("dark");
-    const [sendWithEnter, setSendWithEnter] = useState(true);
-    const [showTokenCount, setShowTokenCount] = useState(false);
-    const [isInitialized, setIsInitialized] = useState(false);
+    // Mount only after loading; edits are not overwritten by later save responses.
+    const [providerId, setProviderId] = useState(initialPreferences.defaultProviderId || "openai");
+    const [selectedModelId, setModelId] = useState(initialPreferences.defaultModelId || "");
+    const [defaultSystemPrompt, setDefaultSystemPrompt] = useState(initialPreferences.defaultSystemPrompt ?? "");
+    const [theme, setTheme] = useState(initialPreferences.theme as "light" | "dark" | "system");
+    const [sendWithEnter, setSendWithEnter] = useState(initialPreferences.sendWithEnter ?? true);
+    const [showTokenCount, setShowTokenCount] = useState(initialPreferences.showTokenCount ?? false);
     const [isSaving, setIsSaving] = useState(false);
     const [saveMessage, setSaveMessage] = useState<string | null>(null);
-    const [localWelcomeMessage, setLocalWelcomeMessage] = useState(welcomeMessage);
-
-    useEffect(() => {
-        if (preferences && !isInitialized) {
-            setProviderId(preferences.defaultProviderId || "openai");
-            setModelId(preferences.defaultModelId || "");
-            setDefaultSystemPrompt(preferences.defaultSystemPrompt ?? "");
-            setTheme(preferences.theme as "light" | "dark" | "system");
-            setSendWithEnter(preferences.sendWithEnter ?? true);
-            setShowTokenCount(preferences.showTokenCount ?? false);
-            setIsInitialized(true);
-        }
-    }, [preferences, isInitialized]);
-
-    useEffect(() => {
-        setLocalWelcomeMessage(welcomeMessage);
-    }, [welcomeMessage]);
+    const [welcomeDraft, setLocalWelcomeMessage] = useState<string | null>(null);
+    const localWelcomeMessage = welcomeDraft ?? welcomeMessage;
 
     const availableModels = useMemo<ModelDefinition[]>(() => {
         const provider = getProvider(providerId);
         return provider?.models || [];
     }, [providerId]);
+    const modelId = availableModels.find((model) => model.id === selectedModelId)?.id
+        ?? availableModels.find((model) => model.isDefault)?.id
+        ?? availableModels[0]?.id
+        ?? "";
 
     useEffect(() => {
-        if (availableModels.length > 0 && !availableModels.find((m) => m.id === modelId)) {
-            const nextModel = availableModels.find((m) => m.isDefault) || availableModels[0];
-            setModelId((current) => (current !== nextModel.id ? nextModel.id : current));
-        }
-    }, [availableModels, modelId]);
-
-    useEffect(() => {
-        const resolvedTheme =
-            theme === "system"
-                ? window.matchMedia("(prefers-color-scheme: dark)").matches
-                    ? "dark"
-                    : "light"
+        const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+        const applyTheme = () => {
+            document.documentElement.dataset.theme = theme === "system"
+                ? (mediaQuery.matches ? "dark" : "light")
                 : theme;
-
-        document.documentElement.dataset.theme = resolvedTheme;
+        };
+        applyTheme();
         window.localStorage.setItem("omnichat-theme", theme);
+        mediaQuery.addEventListener("change", applyTheme);
+        return () => mediaQuery.removeEventListener("change", applyTheme);
     }, [theme]);
 
     const handleSave = async () => {
@@ -101,19 +97,14 @@ export default function PreferencesPage() {
                 showTokenCount,
             });
             setWelcomeMessage(localWelcomeMessage.trim() || "What do you want to build, compare, or figure out today?");
+            setLocalWelcomeMessage((current) => current === localWelcomeMessage ? null : current);
             setSaveMessage("Preferences updated");
+        } catch (cause) {
+            setSaveMessage(cause instanceof Error ? cause.message : "Failed to save preferences");
         } finally {
             setIsSaving(false);
         }
     };
-
-    if (loading) {
-        return <p className="text-sm text-muted-foreground">Loading preferences...</p>;
-    }
-
-    if (error) {
-        return <p className="text-sm text-destructive">Error: {error}</p>;
-    }
 
     return (
         <div className="space-y-8">

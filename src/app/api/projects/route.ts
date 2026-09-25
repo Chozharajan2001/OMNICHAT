@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "@/lib/auth/session";
 import { createProject, getProjects } from "@/lib/db/queries/projects";
 import { z, ZodError } from "zod";
-import { createRateLimiter, getClientIp, getRateLimitHeaders } from "@/lib/rate-limit";
+import { createRateLimiter, getRateLimitHeaders, isRateLimitBackendUnavailableError } from "@/lib/rate-limit";
+import { guardMutationRequest } from "@/lib/api/csrf";
 import { WRITE_RATE_LIMIT, WRITE_RATE_WINDOW_MS } from "@/lib/constants";
 
 const createProjectSchema = z.object({
@@ -36,6 +37,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+    const rejection = guardMutationRequest(request, true);
+    if (rejection) return rejection;
+
     try {
         const session = await getServerSession();
         if (!session?.user?.id) {
@@ -43,13 +47,16 @@ export async function POST(request: Request) {
         }
 
         // Check rate limit
-        const rateLimit = writeRateLimiter.check(session.user.id);
+        const rateLimit = await writeRateLimiter.check(session.user.id);
         if (rateLimit.limited) {
             return NextResponse.json(
                 { error: "Rate limit exceeded" },
                 {
                     status: 429,
-                    headers: getRateLimitHeaders(0, rateLimit.resetTime, WRITE_RATE_LIMIT),
+                    headers: {
+                        "Retry-After": String(rateLimit.retryAfter),
+                        ...getRateLimitHeaders(rateLimit.remaining, rateLimit.resetTime, WRITE_RATE_LIMIT),
+                    },
                 }
             );
         }
@@ -66,6 +73,9 @@ export async function POST(request: Request) {
             }
         );
     } catch (error: unknown) {
+        if (isRateLimitBackendUnavailableError(error)) {
+            return NextResponse.json({ error: "Service unavailable" }, { status: 503 });
+        }
         console.error("Failed to create project:", error);
         
         if (error instanceof ZodError) {

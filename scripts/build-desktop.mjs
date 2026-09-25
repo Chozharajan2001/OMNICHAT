@@ -87,7 +87,7 @@ if (target) {
 
 try {
   execSync(buildCommand, { stdio: "inherit" });
-} catch (error) {
+} catch {
   console.error("\n✗ Tauri build failed");
   console.error("Make sure you have the required platform dependencies:");
   console.error("  Windows: Microsoft Visual Studio C++ Build Tools");

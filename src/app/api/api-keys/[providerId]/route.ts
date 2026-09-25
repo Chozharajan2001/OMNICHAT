@@ -3,12 +3,16 @@
 
 import { NextResponse } from "next/server";
 import { getServerSession } from "@/lib/auth/session";
+import { guardMutationRequest } from "@/lib/api/csrf";
 import { deleteApiKey } from "@/lib/db/queries/api-keys";
 
 export async function DELETE(
     request: Request,
     { params }: { params: Promise<{ providerId: string }> }
 ) {
+    const rejection = guardMutationRequest(request);
+    if (rejection) return rejection;
+
     const session = await getServerSession();
     if (!session?.user?.id) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

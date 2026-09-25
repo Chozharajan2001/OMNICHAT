@@ -1,28 +1,23 @@
 import { auth } from "@/lib/auth/config";
 
 export default auth((req) => {
-    const isLoggedIn = !!req.auth?.user;
-    const isAuthPage = req.nextUrl.pathname.startsWith("/login");
-    const isApiAuthRoute = req.nextUrl.pathname.startsWith("/api/auth");
+    const pathname = req.nextUrl.pathname.replace(/\/$/, "");
+    const isAuthPage = ["/login", "/register", "/verify-email"].includes(pathname);
+    const isApiAuthRoute = pathname === "/api/auth" || pathname.startsWith("/api/auth/");
+    if (isApiAuthRoute || isAuthPage) return;
 
-    // Allow the auth API routes and the login page to proceed unauthenticated
-    if (isApiAuthRoute || isAuthPage) {
-        return;
+    // Auth's JWT callback rechecks database verification, including for old JWTs.
+    if (req.auth?.user) return;
+    if (pathname.startsWith("/api/")) {
+        return Response.json({ error: "Unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } });
     }
-
-    // If the user is authenticated, allow the request
-    if (isLoggedIn) {
-        return;
-    }
-
-    // Otherwise, redirect to the login page
     return Response.redirect(new URL("/login", req.nextUrl));
 });
 
 export const config = {
+    runtime: "nodejs",
     matcher: [
-        // Keep the exact readiness endpoint public, even without an auth session.
-        // Other API routes (including health subpaths) retain authentication.
-        "/((?!_next/static|_next/image|favicon.ico|api/auth|api/health$|icons).*)",
+        // Only the exact readiness endpoint is public outside the auth namespace.
+        "/((?!_next/static|_next/image|favicon.ico|api/auth(?:/|$)|api/health$|icons).*)",
     ],
 };

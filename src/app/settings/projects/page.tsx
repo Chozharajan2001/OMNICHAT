@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { FolderKanban, Plus, Trash2 } from "lucide-react";
 import { useToast } from "@/stores/toast-store";
+import { useJsonResource } from "@/hooks/useJsonResource";
 
 interface ProjectItem {
     id: string;
@@ -16,29 +16,16 @@ interface ProjectItem {
 
 export default function ProjectsSettingsPage() {
     const { success, error: toastError } = useToast();
-    const [projects, setProjects] = useState<ProjectItem[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
+    const { data, loading: isLoading, error: loadError, refresh: fetchProjects } =
+        useJsonResource<{ projects: ProjectItem[] }>("/api/projects", "Failed to load projects");
+    const projects = data?.projects ?? [];
 
-    const fetchProjects = useCallback(async () => {
-        try {
-            const response = await fetch("/api/projects");
-            if (!response.ok) {
-                throw new Error("Failed to load projects");
-            }
-
-            const data = await response.json();
-            setProjects(data.projects || []);
-        } catch (error) {
-            console.error("Failed to fetch projects:", error);
-            toastError("Load failed");
-        } finally {
-            setIsLoading(false);
-        }
-    }, [toastError]);
-
-    useEffect(() => {
-        void fetchProjects();
-    }, [fetchProjects]);
+    if (loadError) {
+        return <div role="alert" className="space-y-3 text-sm text-destructive">
+            <p>{loadError}</p>
+            <Button onClick={() => void fetchProjects()}>Retry</Button>
+        </div>;
+    }
 
     const handleCreateProject = async () => {
         const name = window.prompt("Project name");

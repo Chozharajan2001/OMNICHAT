@@ -1,30 +1,19 @@
-// src/lib/auth/session.ts
 import { auth } from "./config";
+import { hasVerifiedAccess } from "./verified-access";
 
-/**
- * Get the current session on the server.
- *
- * Useful in Server Components, API Routes, and Server Actions.
- *
- * @returns The session object if available, otherwise null.
- */
 export async function getServerSession() {
-    return await auth();
+    try {
+        const session = await auth();
+        if (!session?.user?.id) return null;
+        if (!await hasVerifiedAccess(session.user.id, session.user.email)) return null;
+        return session;
+    } catch {
+        return null;
+    }
 }
 
-/**
- * Get the current session, throwing if not authenticated.
- *
- * Use this for protected server components or API routes where
- * you want to immediately bail out if the user is not logged in.
- *
- * @throws {Error} If there is no valid session.
- * @returns The authenticated session.
- */
 export async function requireAuth() {
-    const session = await auth();
-    if (!session || !session.user?.id) {
-        throw new Error("Unauthorized");
-    }
+    const session = await getServerSession();
+    if (!session?.user?.id) throw new Error("Unauthorized");
     return session;
 }

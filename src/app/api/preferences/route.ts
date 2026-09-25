@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "@/lib/auth/session";
+import { guardMutationRequest } from "@/lib/api/csrf";
 import { getPreferences, upsertPreferences } from "@/lib/db/queries/preferences";
 import { preferencesSchema } from "@/lib/validators/schemas";
 import { ZodError } from "zod";
@@ -23,6 +24,9 @@ export async function GET() {
  * Partially update the user's preferences. Creates a row if none exists.
  */
 export async function PATCH(request: Request) {
+    const rejection = guardMutationRequest(request, true);
+    if (rejection) return rejection;
+
     const session = await getServerSession();
     if (!session?.user?.id) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

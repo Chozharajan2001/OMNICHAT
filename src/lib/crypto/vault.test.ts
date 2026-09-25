@@ -94,11 +94,11 @@ describe("vault encryption helpers", () => {
         expect(() => decryptApiKey(encrypted)).toThrow(/ENCRYPTION_SECRET_KEY/);
     });
 
-    it.each(["", "no-separators", "aa:bb", "aa:bb:cc:dd:ee:ff", "::", "v1:aa:bb:cc"])((
+    it.each(["", "no-separators", "aa:bb", "aa:bb:cc:dd:ee:ff", "::", "v1:aa:bb:cc"])(
         "rejects malformed envelopes: %j", (input) => {
-            expect(() => decryptApiKey(input)).toThrow();
+            expect(() => decryptApiKey(input)).toThrow("Invalid encrypted data format");
         }
-    ));
+    );
 
     it.each([1, 2, 3, 4])("rejects non-hex suffixes in segment %i without silently truncating", (index) => {
         const parts = encryptApiKey("stored-key").split(":");

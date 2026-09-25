@@ -8,11 +8,11 @@ import { streamText } from "ai";
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { getServerSession } from "@/lib/auth/session";
+import { guardMutationRequest } from "@/lib/api/csrf";
 import { getDecryptedKey } from "@/lib/db/queries/api-keys";
 import {
     createConversation,
     getConversationWithMessages,
-    addMessage,
     updateConversation,
 } from "@/lib/db/queries/conversations";
 import { getPreferences } from "@/lib/db/queries/preferences";
@@ -23,13 +23,16 @@ import {
     type ChatMessage,
 } from "@/lib/ai/context-manager";
 import { chatRequestSchema } from "@/lib/validators/schemas";
-import { chatRateLimiter, getRateLimitHeaders } from "@/lib/rate-limit";
+import { chatRateLimiter, getRateLimitHeaders, isRateLimitBackendUnavailableError } from "@/lib/rate-limit";
 import { prisma } from "@/lib/db/prisma";
 import { recordChatMessage } from "@/lib/metrics";
 
 export const maxDuration = 60; // Allow up to 60 seconds for streaming
 
 export async function POST(req: Request) {
+    const rejection = guardMutationRequest(req, true);
+    if (rejection) return rejection;
+
     try {
         // 1. Authenticate user
         const session = await getServerSession();
@@ -39,7 +42,7 @@ export async function POST(req: Request) {
         const userId = session.user.id;
 
         // 2. Check rate limit
-        const rateLimitResult = chatRateLimiter.check(userId);
+        const rateLimitResult = await chatRateLimiter.check(userId);
         if (rateLimitResult.limited) {
             return NextResponse.json(
                 {
@@ -242,6 +245,9 @@ export async function POST(req: Request) {
             },
         });
     } catch (error: unknown) {
+        if (isRateLimitBackendUnavailableError(error)) {
+            return NextResponse.json({ error: "Service unavailable" }, { status: 503 });
+        }
         console.error("Chat API error:", error);
 
         if (error instanceof ZodError) {

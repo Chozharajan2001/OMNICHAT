@@ -33,7 +33,7 @@ export default function LoginPage() {
             });
 
             if (result?.error) {
-                setError("Invalid email or password");
+                setError("Unable to sign in. Check your credentials and verify your email if required.");
             } else {
                 router.push("/chat");
                 router.refresh();
@@ -178,7 +178,15 @@ export default function LoginPage() {
                         </Button>
                     </div>
                     </CardContent>
-                    <CardFooter className="flex flex-col space-y-2">
+                    <CardFooter className="flex flex-col space-y-3">
+                        <p className="text-center text-sm text-muted-foreground">
+                            Hosted accounts may require email verification, including Google and GitHub accounts.
+                            Verify your email, then sign in again. Development and offline desktop setups can sign in directly when verification is disabled.
+                        </p>
+                        <div className="flex flex-wrap justify-center gap-4">
+                            <Button variant="link" onClick={() => router.push("/register")}>Create account</Button>
+                            <Button variant="link" onClick={() => router.push("/verify-email")}>Verify email or resend link</Button>
+                        </div>
                         <p className="text-center text-xs text-muted-foreground">
                             By signing in, you agree to our Terms of Service and Privacy Policy.
                         </p>

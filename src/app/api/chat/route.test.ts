@@ -102,7 +102,7 @@ const tx: TransactionClient = { message: { create: mocks.messageCreate } };
 function request(overrides: Record<string, unknown> = {}) {
     return new Request("http://localhost/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Origin: "http://localhost" },
         body: JSON.stringify({
             messages: [{ role: "user", content: USER_TEXT }],
             providerId: "openai",
@@ -115,7 +115,7 @@ function request(overrides: Record<string, unknown> = {}) {
 function rawRequest(body: string) {
     return new Request("http://localhost/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Origin: "http://localhost" },
         body,
     });
 }
@@ -197,13 +197,14 @@ function deferred() {
 
 beforeEach(() => {
     vi.resetAllMocks();
+    vi.stubEnv("APP_ORIGIN", "http://localhost");
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     mocks.fetch.mockImplementation(async () => {
         throw new Error("Network access is forbidden in route fault-injection tests");
     });
     vi.stubGlobal("fetch", mocks.fetch);
     mocks.getServerSession.mockResolvedValue({ user: { id: USER_ID } });
-    mocks.checkRateLimit.mockReturnValue({ ...RATE_RESULT });
+    mocks.checkRateLimit.mockResolvedValue({ ...RATE_RESULT });
     mocks.getDecryptedKey.mockResolvedValue(FAKE_KEY);
     mocks.getConversationWithMessages.mockResolvedValue({
         id: EXISTING_ID, systemPrompt: null, messages: [],
@@ -228,6 +229,7 @@ afterEach(() => {
     } finally {
         vi.restoreAllMocks();
         vi.unstubAllGlobals();
+        vi.unstubAllEnvs();
     }
 });
 
@@ -302,7 +304,7 @@ describe("POST /api/chat - Phase 4.2 deterministic fault injection", () => {
         });
 
         it("returns 429 and exact retry/rate headers before parsing, then allows a later request", async () => {
-            mocks.checkRateLimit.mockReturnValueOnce({
+            mocks.checkRateLimit.mockResolvedValueOnce({
                 ...RATE_RESULT, limited: true, remaining: 0, retryAfter: 17,
             });
             const req = rawRequest("not json");
