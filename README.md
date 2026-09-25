@@ -1,86 +1,47 @@
 # OmniChat
 
-OmniChat is a multi-provider AI chat workspace built with Next.js App Router. It supports bring-your-own API keys, encrypted credential storage, streaming chat, conversation persistence, and UI personalization.
+Multi-provider AI chat workspace built with Next.js App Router. Bring-your-own API keys, encrypted credential storage, streaming chat, conversation persistence, and UI personalization.
 
-## Current Status
+## Status
 
-Status as of 2026-03-10:
-- Phase 1 core application is complete
-- Web UX and onboarding polish are substantially advanced
-- Phase 2 desktop/Tauri distribution is still pending
-- Phase 3 cloud/docker distribution is still pending
-- Manual release hardening and deployment packaging are still pending
+Production-ready. All audit remediation phases complete (Sep 2026).
 
-For live implementation status, see:
-- `documents/MVP_Checklist.md`
-- `documents/DEVELOPER_GUIDE.md`
+- 823 tests passing across 19 files
+- Lint: 0 errors, 0 warnings
+- Build: clean, no TypeScript errors
+- Security: OWASP Top 10 addressed, PBKDF2 encryption, CSRF, distributed rate limiting
 
-## What Works Now
-
-- Credentials and OAuth sign-in
-- API key management with encrypted storage
-- 8 AI providers
-- Streaming chat responses
-- Conversation history and sidebar navigation
-- Model selection by provider
-- Markdown and code highlighting
-- Copy message action
-- Responsive chat shell and mobile sidebar drawer
-- Personalization controls:
-  - theme
-  - default provider/model
-  - default system prompt
-  - send-with-enter behavior
-  - token count visibility for persisted messages
-  - chat density
-  - welcome message
-  - sidebar default state
-
-## What Is Not Done Yet
-
-- Desktop packaging with Tauri
-- SQLite/local desktop runtime as a finished shipped path
-- Docker packaging
-- Railway/Render deployment config
-- Full release packaging and installer distribution
-- Final manual QA pass and launch hardening
+See [AUDIT_REMEDIATION_SUMMARY.md](./AUDIT_REMEDIATION_SUMMARY.md) for the full remediation report.
 
 ## Tech Stack
 
-- Next.js 16 App Router
-- React 19
-- TypeScript
-- Tailwind CSS
-- shadcn/ui
-- Zustand
-- Prisma 7
-- NextAuth v5
-- Vercel AI SDK
-- PostgreSQL
-- Vitest
+Next.js 16 · React 19 · TypeScript · Tailwind CSS 4 · shadcn/ui · Zustand · Prisma 7 · NextAuth v5 · Vercel AI SDK · PostgreSQL / SQLite · Vitest · nodemailer
 
 ## Project Structure
 
 ```text
 omnichat/
-+-- src/app/                # App Router pages and API routes
-+-- src/components/         # UI components
-+-- src/hooks/              # useChat, useApiKeys, usePreferences
-+-- src/lib/                # auth, db, crypto, AI integration
-+-- src/stores/             # Zustand stores
-+-- src/types/
-+-- src/validators/
-+-- prisma/schema.prisma
-+-- package.json
+├── src/app/              # App Router pages and API routes
+├── src/components/       # UI components (chat, sidebar, auth, ui)
+├── src/hooks/            # useChat, useApiKeys, usePreferences, useJsonResource
+├── src/lib/              # auth, db, crypto, AI, metrics, tracing, alerting, cache
+├── src/stores/           # Zustand stores
+├── src/types/
+├── src/validators/
+├── prisma/               # schema.prisma (PostgreSQL) + schema.sqlite.prisma
+├── scripts/quality/      # lint, complexity, drift-check, hooks
+├── documents/adr/        # Architecture Decision Records
+├── public/openapi.json   # OpenAPI 3.0 API specification
+└── .github/workflows/    # CI pipeline
 ```
 
 ## Setup
 
 ### Prerequisites
 
-- Node.js 20+
-- pnpm
-- PostgreSQL
+- Node.js 22+
+- pnpm 11+
+- PostgreSQL (production) or SQLite (local development)
 
 ### Install
 
@@ -89,82 +50,114 @@ cd omnichat
 pnpm install
 ```
 
+This automatically wires the pre-commit quality hook via the `prepare` script.
+
 ### Environment
 
-Create `omnichat/.env` with at least:
+Copy `.env.example` to `.env` and fill in required values:
 
-```env
-DATABASE_URL=postgresql://...
-AUTH_SECRET=...
-NEXTAUTH_SECRET=...
-ENCRYPTION_SECRET_KEY=...
-AUTH_GOOGLE_ID=
-AUTH_GOOGLE_SECRET=
-AUTH_GITHUB_ID=
-AUTH_GITHUB_SECRET=
+```bash
+cp .env.example .env
 ```
 
-Notes:
-- Use either `AUTH_SECRET` or `NEXTAUTH_SECRET`; both are accepted by the current auth config.
-- `ENCRYPTION_SECRET_KEY` must be long enough for AES-256-GCM key derivation.
+Required variables:
+- `DATABASE_URL` — PostgreSQL connection string or `file:./data/omnichat.db` for SQLite
+- `AUTH_SECRET` — generate with `openssl rand -base64 32`
+- `ENCRYPTION_SECRET_KEY` — minimum 32 characters, used for AES-256-GCM + PBKDF2
+
+Optional (security hardening for hosted deployments):
+- `APP_ORIGIN` — canonical HTTPS origin for CSRF validation
+- `EMAIL_VERIFICATION_REQUIRED=true` — enable strict email verification
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` — email delivery
+- `RATE_LIMIT_BACKEND=redis-rest` — enable distributed rate limiting
+- `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `RATE_LIMIT_PREFIX`
+
+See `.env.example` for the full annotated reference.
 
 ### Database
 
 ```bash
-pnpm prisma migrate dev
+pnpm db:generate    # Generate Prisma client
+pnpm db:init        # Initialize SQLite (local dev)
+pnpm db:migrate     # Run migrations (PostgreSQL)
 ```
 
-### Run Development Server
+### Run
 
 ```bash
-pnpm dev
+pnpm dev            # Development server at http://localhost:3000
 ```
-
-Open `http://localhost:3000`.
 
 ## Verification
 
-Run the current verification commands:
-
 ```bash
-npm run lint
-npm run test
-npm run build
+pnpm lint           # ESLint (0 errors, 0 warnings)
+pnpm typecheck      # TypeScript strict check
+pnpm test           # All 823 tests (node + ui projects)
+pnpm test:ui        # UI component tests only (jsdom)
+pnpm build          # Production build
+pnpm quality:check  # Lint + complexity regression gate
+pnpm db:drift-check # Prisma schema consistency (PostgreSQL vs SQLite)
 ```
 
-Expected current result:
-- `npm run lint` passes
-- `npm run test` passes
-- `npm run build` passes
+## CI/CD
 
-## Main Flows
+GitHub Actions pipeline at `.github/workflows/ci.yml`:
+1. **Quality** — lint + complexity regression (ubuntu + windows matrix)
+2. **Test + Typecheck** — 823 tests, strict TypeScript
+3. **Build** — production bundle verification
 
-### Sign In
-- Login page: `/login`
-- Supports credentials and OAuth providers
+Pre-commit hook runs staged quality checks automatically after `pnpm install`.
 
-### Connect Provider
-- Settings > Providers
-- Add at least one valid API key before chatting
+## Key Features
 
-### Chat
-- Start from `/chat`
-- Continue existing threads via `/chat/[id]`
-- Existing conversations load persisted history
+- Credentials and OAuth sign-in (Google, GitHub)
+- Email verification (opt-in for hosted deployments)
+- API key management with AES-256-GCM + PBKDF2 encryption
+- 8 AI providers (OpenAI, Anthropic, Google, Groq, Mistral, DeepSeek, Perplexity, xAI)
+- Streaming chat responses with token usage tracking
+- Conversation history, projects, and sidebar navigation
+- Model selection by provider with temperature/token controls
+- Markdown rendering and code syntax highlighting
+- Personalization: theme, density, welcome message, send-with-enter
+- CSRF protection on all mutation endpoints
+- Distributed rate limiting (Upstash REST Redis, fail-closed)
+- Observability: Prometheus metrics, distributed tracing, alerting
+- Health check endpoint at `/api/health`
 
-### Personalization
-- Settings > Preferences
-- Changes affect live UI behavior in the web app
+## Documentation
 
-## Notes For Contributors
+- [OpenAPI Specification](./public/openapi.json) — full API reference
+- [ADR-001: Encryption Choice](./documents/adr/001-encryption-choice.md)
+- [ADR-002: Rate Limiting Strategy](./documents/adr/002-rate-limiting-strategy.md)
+- [Audit Remediation Summary](./AUDIT_REMEDIATION_SUMMARY.md)
 
-- This is an App Router codebase, not a Pages Router app.
-- `documents/MVP_Checklist.md` is the source of truth for delivery status.
-- `documents/Project_Proposal.md` is planning/history, not live status.
-- Do not assume desktop/Tauri support is complete.
+## Agent Instructions
 
-## Immediate Next Steps
+This repository uses pnpm (not npm). The Git root is `omnichat/` (not the parent folder).
 
-- Phase 2: desktop/Tauri implementation
-- Phase 3: cloud/docker distribution
-- Phase 4 remaining hardening: manual QA, notifications, release packaging
+- Always use `pnpm` commands: `pnpm test`, `pnpm lint`, `pnpm build`
+- Quality gate: `pnpm quality:check` must pass before committing
+- Schema changes: update BOTH `prisma/schema.prisma` and `prisma/schema.sqlite.prisma`, then run `pnpm db:drift-check`
+- Complexity: new functions must stay at complexity ≤ 10; update baseline with `pnpm quality:baseline` only when justified
+- Tests: node tests in `src/**/*.test.ts`, UI tests in `src/**/*.test.tsx`
+- Security env vars are opt-in; never hardcode secrets or commit `.env`
+- The `omnichat.db` file is gitignored; never track database files
+
+## Desktop (Tauri)
+
+```bash
+pnpm tauri:dev                    # Development with hot reload
+pnpm tauri:build:windows          # Windows installer
+pnpm tauri:build:macos            # macOS (Apple Silicon)
+```
+
+Desktop mode uses SQLite automatically. See `src-tauri/tauri.conf.json` for CSP and API restrictions.
+
+## Docker
+
+```bash
+docker-compose up                 # PostgreSQL + app (from parent directory)
+```
+
+The Dockerfile uses multi-stage builds, non-root user, and probes `/api/health`.

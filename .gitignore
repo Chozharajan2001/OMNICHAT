@@ -20,6 +20,12 @@
 # production
 /build
 
+# database files (generated at runtime, never tracked)
+*.db
+*.db-journal
+*.sqlite
+*.sqlite-journal
+
 # misc
 .DS_Store
 *.pem

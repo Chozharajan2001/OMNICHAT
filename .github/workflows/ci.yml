@@ -33,6 +33,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Normal ESLint and per-function complexity regressions
         run: pnpm quality:check
+      - name: Prisma schema drift check
+        run: pnpm db:drift-check
       - name: Staged snapshot and hook behavior tests
         run: pnpm quality:test
 
