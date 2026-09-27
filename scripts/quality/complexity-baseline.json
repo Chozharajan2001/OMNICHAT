@@ -5,7 +5,7 @@
   "src/app/(auth)/verify-email/page.tsx": {"VerifyEmailPage":1},
   "src/app/api/api-keys/[providerId]/route.ts": {"DELETE":8},
   "src/app/api/api-keys/route.ts": {"GET":5,"POST":13},
-  "src/app/api/chat/route.ts": {"POST":25,"POST/conversation.messages.map:argument0":1,"POST/history.map:argument0":1,"POST/messages.filter:argument0":1,"POST/onFinish":8,"POST/onFinish/prisma.$transaction:argument0":3,"POST/preparedMessages.map:argument0":1},
+  "src/app/api/chat/route.ts": {"POST":29,"POST/conversation.messages.map:argument0":1,"POST/onAbort":3,"POST/onError":1,"POST/onFinish":5,"POST/persistCompletion":6,"POST/persistCompletion/prisma.$transaction:argument0":2,"POST/preparedMessages.map:argument0":1,"POST/prisma.$transaction:argument0":1},
   "src/app/api/conversations/[id]/route.ts": {"DELETE":8,"GET":6,"PATCH":13},
   "src/app/api/conversations/route.ts": {"DELETE":6,"GET":9,"POST":15},
   "src/app/api/health/route.ts": {"GET":9},

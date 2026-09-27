@@ -20,13 +20,17 @@ export const chatRequestSchema = z.object({
         )
         .min(1)
         .max(100), // Limit message array to 100 messages per request
-    providerId: z.string().min(1),
-    modelId: z.string().min(1),
+    providerId: z.string().min(1).max(64),
+    modelId: z.string().min(1).max(200),
     conversationId: z.string().cuid().nullable().optional(),
     privateMode: z.boolean().optional().default(false),
     temperature: z.number().min(0).max(2).optional().default(0.7),
     maxTokens: z.number().min(1).max(200000).optional().default(4096),
     systemPrompt: z.string().max(10000).optional(),
+    // H7: chat-started can attach a new conversation to a project/folder;
+    // ownership is verified server-side inside createConversation.
+    projectId: z.string().cuid().optional(),
+    folderId: z.string().cuid().optional(),
 });
 
 export type ChatRequest = z.infer<typeof chatRequestSchema>;

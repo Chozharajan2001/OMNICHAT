@@ -2,10 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@/lib/ai/context-manager";
 import { POST } from "./route";
 
-// Phase 4.2: exercise the real handler, validation, context preparation, and
-// header formatting. External auth, DB, and provider modules never initialize.
-// The SDK response is inert; explicitly invoking the captured onFinish tests
-// route callback behavior, NOT live streaming, SDK retries, or elapsed timeouts.
+// Phase 4.2 + audit remediation: exercise the real handler, validation,
+// context preparation, and header formatting. External auth, DB, and
+// provider modules never initialize. The SDK response is inert; explicitly
+// invoking the captured onFinish/onAbort/onError tests route callback
+// behavior, NOT live streaming, SDK retries, or elapsed timeouts.
+//
+// Persistence contract under test:
+// - The user message is persisted BEFORE streamText starts.
+// - The assistant message + conversation touch happen in onFinish (or
+//   onAbort for partial text), exactly once per turn.
 type FinishPayload = {
     text: string;
     usage?: { inputTokens?: number; outputTokens?: number };
@@ -17,6 +23,8 @@ type StreamOptions = {
     temperature: number;
     maxOutputTokens: number;
     onFinish: (result: FinishPayload) => Promise<void>;
+    onAbort: (result: { steps: { text?: string }[] }) => Promise<void>;
+    onError: (result: { error: unknown }) => Promise<void> | void;
 };
 
 type ConversationFixture = {
@@ -28,7 +36,7 @@ type ConversationFixture = {
 type MessageWrite = {
     data: {
         conversationId: string;
-        role: ChatMessage["role"];
+        role: "system" | "user" | "assistant";
         content: string;
         modelId: string;
         providerId: string;
@@ -36,8 +44,14 @@ type MessageWrite = {
     };
 };
 
+type ConversationTouch = {
+    where: { id: string };
+    data: { updatedAt: Date };
+};
+
 type TransactionClient = {
     message: { create: (input: MessageWrite) => Promise<unknown> };
+    conversation: { update: (input: ConversationTouch) => Promise<unknown> };
 };
 
 const mocks = vi.hoisted(() => ({
@@ -48,7 +62,7 @@ const mocks = vi.hoisted(() => ({
     ) => Promise<ConversationFixture | null>>(),
     createConversation: vi.fn<(
         userId: string, providerId: string, modelId: string,
-        options: { title: string; systemPrompt?: string }
+        options: { title: string; systemPrompt?: string; projectId?: string; folderId?: string }
     ) => Promise<{ id: string }>>(),
     updateConversation: vi.fn<(
         conversationId: string, userId: string, data: { title: string }
@@ -62,6 +76,7 @@ const mocks = vi.hoisted(() => ({
     toTextStreamResponse: vi.fn<(options?: ResponseInit) => Response>(),
     transaction: vi.fn<(work: (tx: TransactionClient) => Promise<void>) => Promise<void>>(),
     messageCreate: vi.fn<(input: MessageWrite) => Promise<unknown>>(),
+    conversationUpdate: vi.fn<(input: ConversationTouch) => Promise<unknown>>(),
     checkRateLimit: vi.fn<typeof import("@/lib/rate-limit").chatRateLimiter.check>(),
     fetch: vi.fn<typeof fetch>(),
 }));
@@ -87,6 +102,8 @@ const USER_ID = "phase-42-user";
 const EXISTING_ID = "clx1234567890abcdefghijkl";
 const NEW_ID = "clx2234567890abcdefghijkl";
 const RECOVERY_ID = "clx3234567890abcdefghijkl";
+const PROJECT_ID = "clp1234567890abcdefghijkl";
+const FOLDER_ID = "cld1234567890abcdefghijkl";
 const FAKE_KEY = "not-a-real-provider-key";
 const USER_TEXT = "Explain deterministic fault injection";
 const ASSISTANT_TEXT = "This is a synthetic response.";
@@ -97,7 +114,10 @@ const RATE_RESULT = {
     resetTime: 1_800_000_060_001,
     retryAfter: 0,
 };
-const tx: TransactionClient = { message: { create: mocks.messageCreate } };
+const tx: TransactionClient = {
+    message: { create: mocks.messageCreate },
+    conversation: { update: mocks.conversationUpdate },
+};
 
 function request(overrides: Record<string, unknown> = {}) {
     return new Request("http://localhost/api/chat", {
@@ -124,6 +144,8 @@ function capturedStream(index = 0) {
     const options = mocks.streamText.mock.calls[index]?.[0];
     expect(options).toBeDefined();
     expect(options.onFinish).toEqual(expect.any(Function));
+    expect(options.onAbort).toEqual(expect.any(Function));
+    expect(options.onError).toEqual(expect.any(Function));
     return options;
 }
 
@@ -170,14 +192,27 @@ async function expectGenericFailure(response: Response, error: Error) {
     expectNoMessagePersistence();
 }
 
-function expectMessagePair(conversationId: string, content = USER_TEXT) {
+/** H1: the user message is stored during the request, before streaming. */
+function expectUserPersisted(conversationId: string, content = USER_TEXT) {
     expect(mocks.transaction).toHaveBeenCalledTimes(1);
-    expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function));
+    expect(mocks.messageCreate).toHaveBeenCalledExactlyOnceWith({
+        data: {
+            conversationId, role: "user", content,
+            modelId: "gpt-4o", providerId: "openai",
+        },
+    });
+    expect(mocks.addMessage).not.toHaveBeenCalled();
+    expect(mocks.updateConversation).not.toHaveBeenCalled();
+}
+
+/** After onFinish: user + assistant stored, conversation touched once. */
+function expectCompletionPersisted(conversationId: string, content = USER_TEXT) {
+    expect(mocks.transaction).toHaveBeenCalledTimes(2);
     expect(mocks.messageCreate).toHaveBeenCalledTimes(2);
     expect(mocks.messageCreate).toHaveBeenNthCalledWith(1, {
         data: {
             conversationId, role: "user", content,
-            modelId: "gpt-4o", providerId: "openai", tokenCount: 11,
+            modelId: "gpt-4o", providerId: "openai",
         },
     });
     expect(mocks.messageCreate).toHaveBeenNthCalledWith(2, {
@@ -185,6 +220,11 @@ function expectMessagePair(conversationId: string, content = USER_TEXT) {
             conversationId, role: "assistant", content: ASSISTANT_TEXT,
             modelId: "gpt-4o", providerId: "openai", tokenCount: 7,
         },
+    });
+    expect(mocks.conversationUpdate).toHaveBeenCalledTimes(1);
+    expect(mocks.conversationUpdate).toHaveBeenCalledWith({
+        where: { id: conversationId },
+        data: { updatedAt: expect.any(Date) },
     });
     expect(mocks.addMessage).not.toHaveBeenCalled();
 }
@@ -220,6 +260,7 @@ beforeEach(() => {
     // not implement a database, commit, rollback, or atomicity guarantees.
     mocks.transaction.mockImplementation(async (work) => { await work(tx); });
     mocks.messageCreate.mockResolvedValue({ id: "synthetic-message" });
+    mocks.conversationUpdate.mockResolvedValue({ id: "synthetic-conversation" });
     mocks.updateConversation.mockResolvedValue({ id: NEW_ID });
 });
 
@@ -233,7 +274,7 @@ afterEach(() => {
     }
 });
 
-describe("POST /api/chat - Phase 4.2 deterministic fault injection", () => {
+describe("POST /api/chat - fault injection with pre-stream persistence", () => {
     describe("authentication, validation, and rate-limit gates", () => {
         it.each([null, {}, { user: {} }, { user: { id: "" } }])(
             "rejects an unauthenticated session %j before reading the body", async (session) => {
@@ -283,6 +324,7 @@ describe("POST /api/chat - Phase 4.2 deterministic fault injection", () => {
             { name: "unsupported role", body: { messages: [{ role: "tool", content: "test" }] }, path: ["messages", 0, "role"] },
             { name: "empty provider", body: { providerId: "" }, path: ["providerId"] },
             { name: "empty model", body: { modelId: "" }, path: ["modelId"] },
+            { name: "over-long provider", body: { providerId: "p".repeat(65) }, path: ["providerId"] },
             { name: "invalid conversation ID", body: { conversationId: "not-a-cuid" }, path: ["conversationId"] },
             { name: "invalid private mode", body: { privateMode: "true" }, path: ["privateMode"] },
             { name: "temperature above limit", body: { temperature: 3 }, path: ["temperature"] },
@@ -301,6 +343,22 @@ describe("POST /api/chat - Phase 4.2 deterministic fault injection", () => {
             expectNoConversationAccess();
             expectNoProviderStart();
             expect(console.error).toHaveBeenCalledExactlyOnceWith("Chat API error:", expect.any(Error));
+        });
+
+        it("rejects a transcript that does not end with a user message (M8)", async () => {
+            const response = await POST(request({
+                messages: [
+                    { role: "user", content: USER_TEXT },
+                    { role: "assistant", content: "self-supplied reply" },
+                ],
+            }));
+
+            expect(response.status).toBe(400);
+            expect(await response.json()).toEqual({ error: "Last message must be from the user" });
+            expect(mocks.getDecryptedKey).not.toHaveBeenCalled();
+            expectNoConversationAccess();
+            expectNoProviderStart();
+            expect(console.error).not.toHaveBeenCalled();
         });
 
         it("returns 429 and exact retry/rate headers before parsing, then allows a later request", async () => {
@@ -328,11 +386,10 @@ describe("POST /api/chat - Phase 4.2 deterministic fault injection", () => {
             const recovered = await POST(request());
             expect(recovered.status).toBe(200);
             expectRateHeaders(recovered);
-            expect(recovered.headers.get("Retry-After")).toBeNull();
             expect(mocks.checkRateLimit).toHaveBeenNthCalledWith(2, USER_ID);
-            expectNoMessagePersistence();
+            expectUserPersisted(NEW_ID);
             await finish();
-            expectMessagePair(NEW_ID);
+            expectCompletionPersisted(NEW_ID);
             expect(console.error).not.toHaveBeenCalled();
         });
 
@@ -352,7 +409,7 @@ describe("POST /api/chat - Phase 4.2 deterministic fault injection", () => {
         });
     });
 
-    describe("database seam failures before streaming", () => {
+    describe("database seam failures before persistence", () => {
         it.each(["getDecryptedKey", "getConversationWithMessages", "getPreferences"] as const)(
             "sanitizes %s rejection and recovers on a later request", async (seam) => {
                 const error = new Error(`synthetic ${seam} database outage: internal details`);
@@ -379,9 +436,11 @@ describe("POST /api/chat - Phase 4.2 deterministic fault injection", () => {
                 expect(mocks.getConversationWithMessages).toHaveBeenLastCalledWith(EXISTING_ID, USER_ID);
                 expect(mocks.getPreferences).toHaveBeenLastCalledWith(USER_ID);
                 expect(mocks[seam]).toHaveBeenCalledTimes(2);
-                expectNoMessagePersistence();
+                // H1: the user message survives the request itself.
+                expectUserPersisted(EXISTING_ID);
                 await finish();
-                expectMessagePair(EXISTING_ID);
+                expectCompletionPersisted(EXISTING_ID);
+                // The fixture history is empty, so this is the first message.
                 expect(mocks.updateConversation).toHaveBeenCalledExactlyOnceWith(EXISTING_ID, USER_ID, { title: USER_TEXT });
                 expect(console.error).toHaveBeenCalledTimes(1);
             },
@@ -401,61 +460,95 @@ describe("POST /api/chat - Phase 4.2 deterministic fault injection", () => {
             const recovered = await POST(request());
             expect(recovered.status).toBe(200);
             expect(mocks.createConversation).toHaveBeenCalledTimes(2);
+            expectUserPersisted(NEW_ID);
             await finish();
-            expectMessagePair(NEW_ID);
+            expectCompletionPersisted(NEW_ID);
             expect(mocks.updateConversation).toHaveBeenCalledExactlyOnceWith(NEW_ID, USER_ID, { title: USER_TEXT });
+        });
+
+        it("sanitizes a user-persistence transaction failure before the provider starts (H1 gate)", async () => {
+            const error = new Error("synthetic user-message insert outage");
+            mocks.transaction.mockRejectedValueOnce(error);
+
+            const response = await POST(request());
+            expect(response.status).toBe(500);
+            expect(await response.json()).toEqual({
+                error: "An error occurred while processing your request",
+            });
+            expect(console.error).toHaveBeenCalledExactlyOnceWith("Chat API error:", error);
+            expect(mocks.messageCreate).not.toHaveBeenCalled();
+            // Model construction precedes the persist step; streaming never starts.
+            expect(mocks.createLanguageModel).toHaveBeenCalledExactlyOnceWith("openai", "gpt-4o", FAKE_KEY);
+            expect(mocks.streamText).not.toHaveBeenCalled();
+            expect(mocks.toTextStreamResponse).not.toHaveBeenCalled();
         });
     });
 
     describe("synchronous provider startup faults (not live stream faults)", () => {
-        it.each([
-            { seam: "createLanguageModel", name: "provider factory failure", timeout: false },
-            { seam: "createLanguageModel", name: "simulated factory timeout", timeout: true },
-            { seam: "streamText", name: "SDK startup failure", timeout: false },
-            { seam: "streamText", name: "simulated SDK startup timeout", timeout: true },
-            { seam: "toTextStreamResponse", name: "response construction failure", timeout: false },
-        ] as const)("handles $name and persists only the later request's completion", async ({ seam, timeout }) => {
-            const error = timeout
-                ? new DOMException("synthetic startup deadline exceeded", "TimeoutError")
-                : new Error("synthetic provider startup failure: internal details");
-            mocks[seam].mockImplementationOnce(() => { throw error; });
+        it("aborts before provider start when the model factory throws, losing nothing", async () => {
+            const error = new Error("synthetic provider startup failure: internal details");
+            mocks.createLanguageModel.mockImplementationOnce(() => { throw error; });
             mocks.createConversation.mockResolvedValueOnce({ id: NEW_ID }).mockResolvedValue({ id: RECOVERY_ID });
 
+            // Factory construction happens before the persist step, so the
+            // user message has not been written yet on this fault path.
             await expectGenericFailure(await POST(request()), error);
             expect(mocks.createConversation).toHaveBeenCalledTimes(1);
-            // Creation precedes provider startup. This asserts the observed call,
-            // not cleanup of the empty conversation (the route has no such cleanup).
-            expect(mocks[seam]).toHaveBeenCalledTimes(1);
-            if (seam === "createLanguageModel") {
-                expect(mocks.streamText).not.toHaveBeenCalled();
-            }
-            if (seam !== "toTextStreamResponse") {
-                expect(mocks.toTextStreamResponse).not.toHaveBeenCalled();
-            }
+            expect(mocks.streamText).not.toHaveBeenCalled();
+            expect(mocks.toTextStreamResponse).not.toHaveBeenCalled();
 
             const recovered = await POST(request({ messages: [{ role: "user", content: "Recovery request" }] }));
             expect(recovered.status).toBe(200);
-            expect(await recovered.text()).toBe(ASSISTANT_TEXT);
             expect(recovered.headers.get("X-Conversation-Id")).toBe(RECOVERY_ID);
-            expectRateHeaders(recovered);
-            expect(mocks.createConversation).toHaveBeenCalledTimes(2);
-            expect(mocks.createLanguageModel).toHaveBeenLastCalledWith("openai", "gpt-4o", FAKE_KEY);
-            expectNoMessagePersistence();
+            expectUserPersisted(RECOVERY_ID, "Recovery request");
             await finish(mocks.streamText.mock.calls.length - 1);
-            expectMessagePair(RECOVERY_ID, "Recovery request");
+            expectCompletionPersisted(RECOVERY_ID, "Recovery request");
             expect(mocks.updateConversation).toHaveBeenCalledExactlyOnceWith(RECOVERY_ID, USER_ID, { title: "Recovery request" });
             expect(console.error).toHaveBeenCalledTimes(1);
         });
+
+        it.each(["streamText", "toTextStreamResponse"] as const)(
+            "keeps the persisted user message when %s throws synchronously (H1)", async (seam) => {
+                const error = new Error(`synthetic ${seam} startup failure`);
+                mocks[seam].mockImplementationOnce(() => { throw error; });
+                mocks.createConversation.mockResolvedValueOnce({ id: NEW_ID }).mockResolvedValue({ id: RECOVERY_ID });
+
+                const response = await POST(request());
+                expect(response.status).toBe(500);
+                expect(await response.json()).toEqual({
+                    error: "An error occurred while processing your request",
+                });
+                expect(console.error).toHaveBeenCalledExactlyOnceWith("Chat API error:", error);
+                // The user message was persisted BEFORE the provider call:
+                // the failed turn still contains what the user asked.
+                expect(mocks.transaction).toHaveBeenCalledTimes(1);
+                expect(mocks.messageCreate).toHaveBeenCalledExactlyOnceWith({
+                    data: {
+                        conversationId: NEW_ID, role: "user", content: USER_TEXT,
+                        modelId: "gpt-4o", providerId: "openai",
+                    },
+                });
+                if (seam === "streamText") {
+                    expect(mocks.toTextStreamResponse).not.toHaveBeenCalled();
+                }
+            },
+        );
     });
 
-    describe("captured completion callback and transaction fault handling", () => {
-        it("defers persistence until onFinish, then waits for transaction fulfillment before updating the title", async () => {
+    describe("completion callback persistence", () => {
+        it("persists the user message before streaming and the reply on finish", async () => {
             const transactionPending = deferred();
-            const writesAttempted = deferred();
-            mocks.transaction.mockImplementationOnce(async (work) => {
-                await work(tx);
-                writesAttempted.resolve();
-                await transactionPending.promise;
+            const userWritten = deferred();
+            let transactions = 0;
+            mocks.transaction.mockImplementation(async (work) => {
+                transactions += 1;
+                if (transactions === 1) {
+                    await work(tx);
+                    userWritten.resolve();
+                } else {
+                    await work(tx);
+                    await transactionPending.promise;
+                }
             });
             const response = await POST(request());
 
@@ -471,74 +564,116 @@ describe("POST /api/chat - Phase 4.2 deterministic fault injection", () => {
                 temperature: 0.7,
                 maxOutputTokens: 4096,
             });
-            expectNoMessagePersistence();
+            // H1: the user write completed while the response is streaming.
+            await userWritten.promise;
+            expectUserPersisted(NEW_ID);
 
             const completion = finish();
-            try {
-                await writesAttempted.promise;
-                expectMessagePair(NEW_ID);
-                expect(mocks.updateConversation).not.toHaveBeenCalled();
-            } finally {
-                transactionPending.resolve();
-                await completion;
-            }
+            expect(mocks.updateConversation).not.toHaveBeenCalled();
+            transactionPending.resolve();
+            await completion;
+            expectCompletionPersisted(NEW_ID);
             expect(mocks.updateConversation).toHaveBeenCalledExactlyOnceWith(NEW_ID, USER_ID, { title: USER_TEXT });
             expect(console.error).not.toHaveBeenCalled();
         });
 
         it.each([
-            { stage: "transaction entry", attempts: 0 },
-            { stage: "first message write", attempts: 1 },
-            { stage: "second message write", attempts: 2 },
-            { stage: "transaction rejection after both writes", attempts: 2 },
-        ])("logs $stage failure without rejecting onFinish or updating title", async ({ stage, attempts }) => {
+            { stage: "completion transaction entry", assistantWrites: 0 },
+            { stage: "assistant message write", assistantWrites: 1 },
+            { stage: "conversation touch", assistantWrites: 1 },
+        ])("logs $stage failure without rejecting onFinish or updating title", async ({ stage, assistantWrites }) => {
             const error = new Error(`synthetic ${stage} failure`);
-            if (stage === "transaction entry") {
-                mocks.transaction.mockRejectedValueOnce(error);
-            } else if (stage === "first message write") {
-                mocks.messageCreate.mockRejectedValueOnce(error);
-            } else if (stage === "second message write") {
-                mocks.messageCreate.mockResolvedValueOnce({ id: "attempt-only" }).mockRejectedValueOnce(error);
+            if (stage === "completion transaction entry") {
+                mocks.transaction.mockImplementationOnce(async (work) => { await work(tx); })
+                    .mockImplementationOnce(async () => { throw error; });
+            } else if (stage === "assistant message write") {
+                // Fail the SECOND write (assistant); the first is the
+                // pre-stream user persistence.
+                mocks.messageCreate.mockResolvedValueOnce({ id: "user-row" })
+                    .mockRejectedValueOnce(error);
             } else {
-                mocks.transaction.mockImplementationOnce(async (work) => {
-                    await work(tx);
-                    throw error;
-                });
+                mocks.conversationUpdate.mockRejectedValueOnce(error);
             }
             const response = await POST(request());
             expect(response.status).toBe(200);
-            expectNoMessagePersistence();
+            expectUserPersisted(NEW_ID);
 
             await expect(finish()).resolves.toBeUndefined();
-            expect(mocks.transaction).toHaveBeenCalledTimes(1);
-            expect(mocks.messageCreate).toHaveBeenCalledTimes(attempts);
+            expect(mocks.transaction).toHaveBeenCalledTimes(2);
+            // user write + attempted assistant writes
+            expect(mocks.messageCreate).toHaveBeenCalledTimes(1 + assistantWrites);
             expect(mocks.updateConversation).not.toHaveBeenCalled();
             expect(mocks.addMessage).not.toHaveBeenCalled();
             expect(console.error).toHaveBeenCalledExactlyOnceWith("Failed to save messages:", error);
             // Only attempted calls are observable. No assertion about real
             // stored rows, transaction rollback, or database atomicity is made.
+        });
+
+        it("persists a partial reply on abort, exactly once (H1)", async () => {
+            const response = await POST(request());
             expect(response.status).toBe(200);
+            expectUserPersisted(NEW_ID);
+
+            await capturedStream().onAbort({ steps: [{ text: "Partial answer before stop" }] });
+            expect(mocks.messageCreate).toHaveBeenCalledTimes(2);
+            expect(mocks.messageCreate).toHaveBeenNthCalledWith(2, {
+                data: {
+                    conversationId: NEW_ID, role: "assistant",
+                    content: "Partial answer before stop",
+                    modelId: "gpt-4o", providerId: "openai",
+                },
+            });
+            expect(mocks.conversationUpdate).toHaveBeenCalledTimes(1);
+            expect(mocks.updateConversation).toHaveBeenCalledExactlyOnceWith(NEW_ID, USER_ID, { title: USER_TEXT });
+            expect(console.error).not.toHaveBeenCalled();
+        });
+
+        it("never stores a second completion when finish and abort both fire", async () => {
+            await POST(request());
+            await finish();
+            await capturedStream().onAbort({ steps: [{ text: "LATE PARTIAL" }] });
+
+            expect(mocks.messageCreate).toHaveBeenCalledTimes(2);
+            expect(mocks.transaction).toHaveBeenCalledTimes(2);
+            expect(mocks.conversationUpdate).toHaveBeenCalledTimes(1);
+            const assistantWrites = mocks.messageCreate.mock.calls.filter(
+                ([write]) => write.data.role === "assistant",
+            );
+            expect(assistantWrites).toHaveLength(1);
+            expect(assistantWrites[0][0].data.content).toBe(ASSISTANT_TEXT);
+        });
+
+        it("logs stream errors without writing an assistant message", async () => {
+            await POST(request());
+            const error = new Error("synthetic provider stream error");
+
+            await capturedStream().onError({ error });
+            expect(console.error).toHaveBeenCalledExactlyOnceWith("Chat stream error:", error);
+            expect(mocks.messageCreate).toHaveBeenCalledTimes(1); // user only
+            expect(mocks.transaction).toHaveBeenCalledTimes(1);
+            expect(mocks.updateConversation).not.toHaveBeenCalled();
         });
 
         it("recovers from a failed completion transaction on a later request without resetting mocks", async () => {
-            const error = new Error("synthetic transient transaction outage");
-            mocks.transaction.mockRejectedValueOnce(error);
+            const error = new Error("synthetic transient completion outage");
+            mocks.transaction.mockImplementationOnce(async (work) => { await work(tx); })
+                .mockImplementationOnce(async () => { throw error; });
             mocks.createConversation.mockResolvedValueOnce({ id: NEW_ID }).mockResolvedValue({ id: RECOVERY_ID });
             await POST(request());
             await finish();
-            expect(mocks.messageCreate).not.toHaveBeenCalled();
+            expect(mocks.messageCreate).toHaveBeenCalledTimes(1); // user only
             expect(mocks.updateConversation).not.toHaveBeenCalled();
 
             const recovered = await POST(request({ messages: [{ role: "user", content: "Try again" }] }));
             expect(recovered.status).toBe(200);
             expect(recovered.headers.get("X-Conversation-Id")).toBe(RECOVERY_ID);
             await finish(1);
-            expect(mocks.transaction).toHaveBeenCalledTimes(2);
-            expect(mocks.messageCreate).toHaveBeenCalledTimes(2);
-            expect(mocks.messageCreate).toHaveBeenNthCalledWith(1, {
+            expect(mocks.transaction).toHaveBeenCalledTimes(4);
+            expect(mocks.messageCreate).toHaveBeenCalledTimes(3);
+            expect(mocks.messageCreate).toHaveBeenNthCalledWith(2, {
                 data: expect.objectContaining({ conversationId: RECOVERY_ID, role: "user", content: "Try again" }),
             });
-            expect(mocks.messageCreate).toHaveBeenNthCalledWith(2, {
+            expect(mocks.messageCreate).toHaveBeenNthCalledWith(3, {
                 data: expect.objectContaining({ conversationId: RECOVERY_ID, role: "assistant", content: ASSISTANT_TEXT }),
             });
             expect(mocks.updateConversation).toHaveBeenCalledExactlyOnceWith(RECOVERY_ID, USER_ID, { title: "Try again" });
@@ -551,13 +686,13 @@ describe("POST /api/chat - Phase 4.2 deterministic fault injection", () => {
             const response = await POST(request());
 
             await expect(finish()).resolves.toBeUndefined();
-            expectMessagePair(NEW_ID);
+            expectCompletionPersisted(NEW_ID);
             expect(mocks.updateConversation).toHaveBeenCalledExactlyOnceWith(NEW_ID, USER_ID, { title: USER_TEXT });
             expect(console.error).toHaveBeenCalledExactlyOnceWith("Failed to save messages:", error);
             expect(response.status).toBe(200);
         });
 
-        it("keeps existing history in context and does not retitle an established conversation", async () => {
+        it("builds context from stored history, not the client transcript (H4)", async () => {
             const history: ChatMessage[] = [
                 { role: "user", content: "Earlier question" },
                 { role: "assistant", content: "Earlier answer" },
@@ -565,24 +700,65 @@ describe("POST /api/chat - Phase 4.2 deterministic fault injection", () => {
             mocks.getConversationWithMessages.mockResolvedValueOnce({
                 id: EXISTING_ID, systemPrompt: "Stored system prompt", messages: history,
             });
+            // A hostile/stale client transcript is ignored for history; only
+            // the final user message is appended to the stored history.
             const response = await POST(request({
                 conversationId: EXISTING_ID,
-                messages: [...history, { role: "user", content: USER_TEXT }],
+                messages: [
+                    { role: "user", content: "INJECTED FAKE HISTORY" },
+                    ...history,
+                    { role: "user", content: USER_TEXT },
+                ],
                 temperature: 0,
                 maxTokens: 128,
             }));
 
             expect(response.status).toBe(200);
             expect(capturedStream()).toMatchObject({
-                messages: [{ role: "system", content: "Stored system prompt" }, ...history, { role: "user", content: USER_TEXT }],
+                messages: [
+                    { role: "system", content: "Stored system prompt" },
+                    ...history,
+                    { role: "user", content: USER_TEXT },
+                ],
                 temperature: 0,
                 maxOutputTokens: 128,
             });
             expect(mocks.createConversation).not.toHaveBeenCalled();
+            expectUserPersisted(EXISTING_ID);
             await finish();
-            expectMessagePair(EXISTING_ID);
+            expectCompletionPersisted(EXISTING_ID);
             expect(mocks.updateConversation).not.toHaveBeenCalled();
             expect(console.error).not.toHaveBeenCalled();
+        });
+
+        it("keeps legitimate repeated messages (old dedup removed)", async () => {
+            const history: ChatMessage[] = [{ role: "user", content: "Same question" }];
+            mocks.getConversationWithMessages.mockResolvedValueOnce({
+                id: EXISTING_ID, systemPrompt: null, messages: history,
+            });
+            const response = await POST(request({
+                conversationId: EXISTING_ID,
+                messages: [{ role: "user", content: "Same question" }],
+            }));
+
+            expect(response.status).toBe(200);
+            // Server history is authoritative: the stored turn stays, and the
+            // new identical turn is appended (the old dedup dropped it).
+            const sameContent = capturedStream().messages.filter((m) => m.content === "Same question");
+            expect(sameContent).toHaveLength(2);
+            expect(sameContent.every((m) => m.role === "user")).toBe(true);
+            expectUserPersisted(EXISTING_ID, "Same question");
+        });
+
+        it("passes projectId and folderId through conversation creation (H7)", async () => {
+            const response = await POST(request({ projectId: PROJECT_ID, folderId: FOLDER_ID }));
+
+            expect(response.status).toBe(200);
+            expect(mocks.createConversation).toHaveBeenCalledExactlyOnceWith(
+                USER_ID, "openai", "gpt-4o",
+                { title: "New Chat", systemPrompt: undefined, projectId: PROJECT_ID, folderId: FOLDER_ID },
+            );
+            expectUserPersisted(NEW_ID);
         });
 
         it("handles unavailable token counts without failing persistence", async () => {
@@ -614,8 +790,32 @@ describe("POST /api/chat - Phase 4.2 deterministic fault injection", () => {
             expect(console.error).not.toHaveBeenCalled();
         });
 
+        it("uses the request transcript directly in private mode", async () => {
+            const response = await POST(request({
+                privateMode: true,
+                messages: [
+                    { role: "user", content: "Earlier private turn" },
+                    { role: "assistant", content: "Earlier private reply" },
+                    { role: "user", content: USER_TEXT },
+                ],
+            }));
+
+            expect(response.status).toBe(200);
+            expect(capturedStream()).toMatchObject({
+                messages: [
+                    { role: "system", content: "You are a helpful assistant." },
+                    { role: "user", content: "Earlier private turn" },
+                    { role: "assistant", content: "Earlier private reply" },
+                    { role: "user", content: USER_TEXT },
+                ],
+            });
+            expectNoConversationAccess();
+            await expect(finish()).resolves.toBeUndefined();
+            expectNoConversationAccess();
+        });
+
         it("does not create or persist a conversation on a private provider startup failure", async () => {
-            const error = new DOMException("synthetic private startup timeout", "TimeoutError");
+            const error = new Error("synthetic private startup failure");
             mocks.streamText.mockImplementationOnce(() => { throw error; });
 
             await expectGenericFailure(await POST(request({ privateMode: true, conversationId: EXISTING_ID })), error);

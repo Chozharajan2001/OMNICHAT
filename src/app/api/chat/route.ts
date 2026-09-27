@@ -80,7 +80,20 @@ export async function POST(req: Request) {
             systemPrompt: customSystemPrompt,
             temperature,
             maxTokens,
+            projectId,
+            folderId,
         } = chatRequestSchema.parse(body);
+
+        // M8: the turn must end with a user-authored message. The persisted
+        // role is always the server-side literal "user", never echoed from
+        // client input.
+        const userMessage = messages[messages.length - 1];
+        if (!userMessage || userMessage.role !== "user") {
+            return NextResponse.json(
+                { error: "Last message must be from the user" },
+                { status: 400 }
+            );
+        }
 
         // 3. Get user's API key (decrypted)
         const apiKey = await getDecryptedKey(userId, providerId);
@@ -120,6 +133,11 @@ export async function POST(req: Request) {
                 { 
                     title: "New Chat",
                     systemPrompt: customSystemPrompt,
+                    // H7: chat-started entry point can attach the new
+                    // conversation to a project/folder; ownership is verified
+                    // inside createConversation.
+                    projectId,
+                    folderId,
                 }
             );
             conversationId = newConversation.id;
@@ -135,13 +153,13 @@ export async function POST(req: Request) {
             ?? "You are a helpful assistant.";
 
         // 6. Prepare messages with context management
-        // Filter out messages from submitted array that already exist in history
-        // to avoid duplication when client sends full transcript
-        const historyContents = new Set(history.map(m => `${m.role}:${m.content}`));
-        const newMessages = messages.filter(m => !historyContents.has(`${m.role}:${m.content}`));
-        
-        // Use only new messages combined with history for context preparation
-        const allMessages: ChatMessage[] = [...history, ...newMessages];
+        // H4: for stored conversations the prompt history comes from the
+        // DATABASE plus exactly the new user message. The old content-based
+        // dedup dropped legitimate repeated messages, and trusting the client
+        // transcript let it inject arbitrary "history".
+        const allMessages: ChatMessage[] = privateMode
+            ? messages
+            : [...history, userMessage];
         const preparedMessages = prepareMessages(allMessages, {
             providerId,
             modelId,
@@ -151,18 +169,61 @@ export async function POST(req: Request) {
         // 7. Create language model instance
         const model = createLanguageModel(providerId, modelId, apiKey);
 
-        // 8. Get the user message (last one in the input)
-        const userMessage = messages[messages.length - 1];
-        
-        // Safety check for empty messages array
-        if (!userMessage) {
-            return NextResponse.json(
-                { error: "No message provided" },
-                { status: 400 }
-            );
+        // 8. H1: persist the user message BEFORE calling the provider, so a
+        // failed or aborted turn never loses what the user asked.
+        if (!privateMode && conversationId) {
+            await prisma.$transaction(async (tx) => {
+                await tx.message.create({
+                    data: {
+                        conversationId,
+                        role: "user", // server-authored literal (M8)
+                        content: userMessage.content,
+                        modelId,
+                        providerId,
+                    },
+                });
+            });
         }
 
         // 9. Stream response
+        // Completion persistence is shared by onFinish/onAbort with a
+        // once-only guard: a turn stores exactly one assistant message.
+        let completionPersisted = false;
+        const persistCompletion = async (text: string, tokenCount?: number) => {
+            if (completionPersisted || privateMode || !conversationId) {
+                return;
+            }
+            completionPersisted = true;
+            try {
+                await prisma.$transaction(async (tx) => {
+                    await tx.message.create({
+                        data: {
+                            conversationId,
+                            role: "assistant",
+                            content: text,
+                            modelId,
+                            providerId,
+                            ...(tokenCount !== undefined ? { tokenCount } : {}),
+                        },
+                    });
+                    // H3: touch updatedAt — drives list recency and the
+                    // updatedAt-based cursor pagination.
+                    await tx.conversation.update({
+                        where: { id: conversationId },
+                        data: { updatedAt: new Date() },
+                    });
+                });
+
+                // Update conversation title if it's a new conversation
+                if (history.length === 0) {
+                    const title = generateTitleFromMessage(userMessage.content);
+                    await updateConversation(conversationId, userId, { title });
+                }
+            } catch (error) {
+                console.error("Failed to save messages:", error);
+            }
+        };
+
         const startTime = Date.now();
         const result = streamText({
             model,
@@ -176,7 +237,7 @@ export async function POST(req: Request) {
             // Called when streaming completes successfully
             onFinish: async ({ text, usage }) => {
                 const durationMs = Date.now() - startTime;
-                
+
                 // Record chat metrics
                 if (usage) {
                     recordChatMessage(
@@ -188,46 +249,21 @@ export async function POST(req: Request) {
                     );
                 }
 
-                if (privateMode || !conversationId) {
-                    return;
+                await persistCompletion(text, usage?.outputTokens);
+            },
+
+            // User stopped the run: keep the partial answer, if any.
+            onAbort: async ({ steps }) => {
+                const lastStep = steps[steps.length - 1];
+                if (lastStep?.text) {
+                    await persistCompletion(lastStep.text);
                 }
+            },
 
-                try {
-                    // Use transaction to ensure both messages are saved atomically
-                    await prisma.$transaction(async (tx) => {
-                        // Save user message with actual role from request
-                        await tx.message.create({
-                            data: {
-                                conversationId,
-                                role: userMessage.role,
-                                content: userMessage.content,
-                                modelId,
-                                providerId,
-                                tokenCount: usage?.inputTokens,
-                            },
-                        });
-
-                        // Save assistant message
-                        await tx.message.create({
-                            data: {
-                                conversationId,
-                                role: "assistant",
-                                content: text,
-                                modelId,
-                                providerId,
-                                tokenCount: usage?.outputTokens,
-                            },
-                        });
-                    });
-
-                    // Update conversation title if it's a new conversation
-                    if (history.length === 0) {
-                        const title = generateTitleFromMessage(userMessage.content);
-                        await updateConversation(conversationId, userId, { title });
-                    }
-                } catch (error) {
-                    console.error("Failed to save messages:", error);
-                }
+            // Provider/stream failure: the user message is already stored;
+            // surface the failure in logs (the stream client sees the error).
+            onError: ({ error }) => {
+                console.error("Chat stream error:", error);
             },
         });
 
