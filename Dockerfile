@@ -56,15 +56,8 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
-# Prisma CLI (pinned to the @prisma/client major) so the entrypoint can provision
-# the PostgreSQL schema at container start. Engines are fetched at build time.
-RUN npm install --global prisma@7.8.0
-
-# Runtime entrypoint: provisions the schema for PostgreSQL, then execs CMD.
-COPY scripts/docker-entrypoint.sh ./docker-entrypoint.sh
-
 # Set correct permissions
-RUN chmod +x ./docker-entrypoint.sh && chown -R nextjs:nodejs /app
+RUN chown -R nextjs:nodejs /app
 
 # Switch to non-root user
 USER nextjs
@@ -79,6 +72,12 @@ ENV HOSTNAME="0.0.0.0"
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD node -e "fetch('http://localhost:3000/api/health', { redirect: 'error', signal: AbortSignal.timeout(8000) }).then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 
-# Provision schema (PostgreSQL only), then start the application
-ENTRYPOINT ["./docker-entrypoint.sh"]
+# Start the application
 CMD ["node", "server.js"]
+
+# Stage 4: Migrate — one-shot schema provisioning (run as an init service / deploy
+# pre-command against the target DATABASE_URL; the runtime image stays slim).
+# Inherits the builder's full toolchain (Prisma CLI + prisma.config.ts + dotenv).
+FROM builder AS migrate
+ENV NODE_ENV=production
+CMD ["pnpm", "prisma", "db", "push"]
