@@ -20,6 +20,9 @@ export async function DELETE(
         await deleteProject(session.user.id, id);
         return NextResponse.json({ success: true });
     } catch (error: unknown) {
+        if (error instanceof Error && error.message === "Project not found or access denied") {
+            return NextResponse.json({ error: "Project not found" }, { status: 404 });
+        }
         console.error("Failed to delete project:", error);
         return NextResponse.json(
             { error: "Failed to delete project" },

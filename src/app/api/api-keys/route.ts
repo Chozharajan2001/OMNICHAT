@@ -8,13 +8,18 @@ import { apiKeyRateLimiter, getRateLimitHeaders, isRateLimitBackendUnavailableEr
 import { ZodError } from "zod";
 
 export async function GET() {
-    const session = await getServerSession();
-    if (!session?.user?.id) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    try {
+        const session = await getServerSession();
+        if (!session?.user?.id) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
 
-    const keys = await getUserKeys(session.user.id);
-    return NextResponse.json({ keys });
+        const keys = await getUserKeys(session.user.id);
+        return NextResponse.json({ keys });
+    } catch (error) {
+        console.error("Failed to list API keys:", error);
+        return NextResponse.json({ error: "Failed to load API keys" }, { status: 500 });
+    }
 }
 
 export async function POST(request: Request) {
@@ -65,7 +70,9 @@ export async function POST(request: Request) {
             validationSkipped = false;
         }
 
-        // Mark as valid if validation passed or was skipped
+        // isValid records "confirmed valid with the provider". A skipped validation is
+        // intentionally stored as isValid:false (unvalidated), so the providers view can
+        // prompt the user to verify it. A passed validation stores isValid:true.
         await saveApiKey(session.user.id, providerId, apiKey, !validationSkipped);
         return NextResponse.json({ success: true });
     } catch (error: unknown) {

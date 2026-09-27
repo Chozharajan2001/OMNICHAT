@@ -43,6 +43,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# Qoder agent/IDE output (harness reports, canvases) — not app source
+/.qoder
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

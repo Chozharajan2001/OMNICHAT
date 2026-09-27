@@ -10,13 +10,18 @@ import { ZodError } from "zod";
  * Returns the current user's preferences (or null if none set yet).
  */
 export async function GET() {
-    const session = await getServerSession();
-    if (!session?.user?.id) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    try {
+        const session = await getServerSession();
+        if (!session?.user?.id) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
 
-    const prefs = await getPreferences(session.user.id);
-    return NextResponse.json({ preferences: prefs });
+        const prefs = await getPreferences(session.user.id);
+        return NextResponse.json({ preferences: prefs });
+    } catch (error) {
+        console.error("Failed to load preferences:", error);
+        return NextResponse.json({ error: "Failed to load preferences" }, { status: 500 });
+    }
 }
 
 /**

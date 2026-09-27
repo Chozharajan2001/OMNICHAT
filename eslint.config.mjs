@@ -15,6 +15,7 @@ const eslintConfig = defineConfig([
     "src/generated/**",
     "src-tauri/target/**",
     "coverage/**",
+    ".qoder/**",
   ]),
 ]);
 
