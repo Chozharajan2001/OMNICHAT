@@ -6,7 +6,7 @@ Multi-provider AI chat workspace built with Next.js App Router. Bring-your-own A
 
 Production-ready. All audit remediation phases complete (Sep 2026).
 
-- 823 tests passing across 19 files
+- Full test suite passing (run `pnpm test` for the live count)
 - Lint: 0 errors, 0 warnings
 - Build: clean, no TypeScript errors
 - Security: OWASP Top 10 addressed, PBKDF2 encryption, CSRF, distributed rate limiting
@@ -93,7 +93,7 @@ pnpm dev            # Development server at http://localhost:3000
 ```bash
 pnpm lint           # ESLint (0 errors, 0 warnings)
 pnpm typecheck      # TypeScript strict check
-pnpm test           # All 823 tests (node + ui projects)
+pnpm test           # Full suite (node + ui projects)
 pnpm test:ui        # UI component tests only (jsdom)
 pnpm build          # Production build
 pnpm quality:check  # Lint + complexity regression gate
@@ -104,7 +104,7 @@ pnpm db:drift-check # Prisma schema consistency (PostgreSQL vs SQLite)
 
 GitHub Actions pipeline at `.github/workflows/ci.yml`:
 1. **Quality** — lint + complexity regression (ubuntu + windows matrix)
-2. **Test + Typecheck** — 823 tests, strict TypeScript
+2. **Test + Typecheck** — full suite, strict TypeScript
 3. **Build** — production bundle verification
 
 Pre-commit hook runs staged quality checks automatically after `pnpm install`.
@@ -143,6 +143,7 @@ This repository uses pnpm (not npm). The Git root is `omnichat/` (not the parent
 - Tests: node tests in `src/**/*.test.ts`, UI tests in `src/**/*.test.tsx`
 - Security env vars are opt-in; never hardcode secrets or commit `.env`
 - The `omnichat.db` file is gitignored; never track database files
+- Agent sessions/memories bind to the opened workspace folder. Open the IDE at the repo root (`omnichat/`) — not the non-git parent — so Better Harness session evidence resolves; opening the parent leaves the session lane empty (`eligibleSessions=0`).
 
 ## Desktop (Tauri)
 
@@ -161,3 +162,5 @@ docker-compose up                 # PostgreSQL + app (from parent directory)
 ```
 
 The Dockerfile uses multi-stage builds, non-root user, and probes `/api/health`.
+
+On container start, `scripts/docker-entrypoint.sh` provisions the PostgreSQL schema (`prisma db push`) so a fresh deploy creates its tables; SQLite/other URLs skip provisioning. The compose healthcheck also probes the auth-free `/api/health`.
