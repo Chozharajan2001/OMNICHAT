@@ -48,7 +48,7 @@ export function useChat(options: UseOmniChatOptions = {}) {
         setMessages,
         addMessage,
         removeMessage,
-        updateLastMessage,
+        updateMessage,
     } = useChatStore();
 
     const [input, setInput] = useState("");
@@ -114,8 +114,18 @@ export function useChat(options: UseOmniChatOptions = {}) {
                 });
 
                 if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error || "Failed to send message");
+                    // Error bodies are not guaranteed to be JSON (proxies,
+                    // 5xx HTML pages); never let parsing mask the real error.
+                    let message = `Failed to send message (${response.status})`;
+                    try {
+                        const errorData = await response.json();
+                        if (typeof errorData?.error === "string") {
+                            message = errorData.error;
+                        }
+                    } catch {
+                        // keep the status-based message
+                    }
+                    throw new Error(message);
                 }
 
                 // Get conversation ID from response header
@@ -142,12 +152,15 @@ export function useChat(options: UseOmniChatOptions = {}) {
                     accumulatedContent += chunk;
                     accumulatedContentRef.current = accumulatedContent;
 
-                    // Update the assistant message with streamed content
-                    updateLastMessage(accumulatedContent);
+                    // Update THIS turn's assistant message by id. If the
+                    // user switched conversations mid-stream the message is
+                    // gone and the update is a safe no-op instead of
+                    // overwriting another conversation's last message.
+                    updateMessage(assistantMsgId, accumulatedContent);
                 }
 
                 // Update with final content
-                updateLastMessage(accumulatedContent);
+                updateMessage(assistantMsgId, accumulatedContent);
 
                 if (newConversationId && !privateMode) {
                     onComplete?.(newConversationId);
@@ -188,7 +201,7 @@ export function useChat(options: UseOmniChatOptions = {}) {
             temperature,
             maxTokens,
             addMessage,
-            updateLastMessage,
+            updateMessage,
             setConversationId,
             removeMessage,
             onComplete,
@@ -234,10 +247,14 @@ export function useChat(options: UseOmniChatOptions = {}) {
                 setConversationId(id);
                 setConversationTitle(data.title);
             } catch (err) {
+                // Surface the failure instead of silently showing an empty
+                // or stale transcript.
                 console.error("Failed to load conversation:", err);
+                setError("Failed to load conversation");
+                onError?.(err as Error);
             }
         },
-        [setMessages, setConversationId, setConversationTitle]
+        [setMessages, setConversationId, setConversationTitle, onError]
     );
 
     // Handle input change

@@ -56,7 +56,7 @@ interface ChatState {
     setMessages: (messages: Message[]) => void;
     addMessage: (message: Message) => void;
     removeMessage: (id: string) => void;
-    updateLastMessage: (content: string) => void;
+    updateMessage: (id: string, content: string) => void;
     clearMessages: () => void;
 
     toggleSidebar: () => void;
@@ -91,17 +91,16 @@ export const useChatStore = create<ChatState>()(
                 set((state) => ({
                     messages: state.messages.filter((message) => message.id !== id),
                 })),
-            updateLastMessage: (content) =>
-                set((state) => {
-                    const messages = [...state.messages];
-                    if (messages.length > 0) {
-                        messages[messages.length - 1] = {
-                            ...messages[messages.length - 1],
-                            content,
-                        };
-                    }
-                    return { messages };
-                }),
+            // Id-targeted update: a stream must only ever write to its own
+            // message. The old positional updateLastMessage could overwrite
+            // the last message of a DIFFERENT conversation the user switched
+            // to mid-stream.
+            updateMessage: (id, content) =>
+                set((state) => ({
+                    messages: state.messages.map((message) =>
+                        message.id === id ? { ...message, content } : message
+                    ),
+                })),
             clearMessages: () => set({ messages: [], conversationId: null, conversationTitle: "New Chat" }),
 
             // UI actions
