@@ -158,9 +158,18 @@ Desktop mode uses SQLite automatically. See `src-tauri/tauri.conf.json` for CSP 
 ## Docker
 
 ```bash
-docker-compose up                 # PostgreSQL + app (from parent directory)
+docker compose up -d                        # PostgreSQL + migrate + app
+docker compose -f docker-compose.sqlite.yml up -d   # single-container SQLite mode
 ```
 
-The Dockerfile uses multi-stage builds, non-root user, and probes `/api/health`.
+Compose files live in this repository root. The Dockerfile uses multi-stage
+builds, a non-root runtime user, and health probes against the auth-free
+`/api/health`.
 
-On container start, `scripts/docker-entrypoint.sh` provisions the PostgreSQL schema (`prisma db push`) so a fresh deploy creates its tables; SQLite/other URLs skip provisioning. The compose healthcheck also probes the auth-free `/api/health`.
+Schema provisioning is a one-shot `migrate` compose service (the Dockerfile's
+`migrate` target runs `prisma db push`); the app container only starts after
+it completes successfully. There is no runtime entrypoint.
+
+`/api/metrics` is token-protected: set `METRICS_TOKEN` to allow Prometheus
+scrapes via `Authorization: Bearer <token>`; in production an unset token
+makes the endpoint respond 404.

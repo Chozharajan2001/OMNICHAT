@@ -1,0 +1,59 @@
+# OmniChat Docker Compose (SQLite Mode)
+# Simple single-container setup for personal use.
+# Usage (from the repository root):
+#   docker compose -f docker-compose.sqlite.yml up -d
+
+services:
+  # One-shot schema provisioning into the shared data volume. Runs as root
+  # (builder toolchain), then hands /app/data to the app user (uid 1001) so
+  # the slim runner can write its SQLite database.
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: migrate
+    restart: "no"
+    environment:
+      DATABASE_URL: file:/app/data/omnichat.db
+    volumes:
+      - omnichat-data:/app/data
+    command: ["sh", "-c", "pnpm prisma db push && chown -R 1001:1001 /app/data"]
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    environment:
+      # SQLite database (stored in volume)
+      DATABASE_URL: file:/app/data/omnichat.db
+      # Authentication
+      AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET is required}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      # Encryption
+      ENCRYPTION_SECRET_KEY: ${ENCRYPTION_SECRET_KEY:?ENCRYPTION_SECRET_KEY is required}
+      # OAuth (optional)
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      # Metrics scrape token (optional): unset hides /api/metrics entirely
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      # Node
+      NODE_ENV: production
+    volumes:
+      - omnichat-data:/app/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  omnichat-data:

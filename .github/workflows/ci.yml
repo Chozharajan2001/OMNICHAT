@@ -1,8 +1,14 @@
+# OmniChat CI (repository root = omnichat/)
+# The previous copy of this workflow only listened for `main`/`develop`
+# while the default branch is `master`, so it never ran; it also pinned
+# Node 20/pnpm 9 while the project requires Node 22/pnpm 11.8, and it
+# never built the Docker image that production deploys use.
+
 name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [master, main, develop]
   pull_request:
   workflow_dispatch:
 
@@ -27,7 +33,7 @@ jobs:
           version: 11.8.0
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: "22"
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
@@ -53,7 +59,7 @@ jobs:
           version: 11.8.0
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: "22"
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
@@ -76,9 +82,47 @@ jobs:
           version: 11.8.0
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: "22"
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:generate
       - run: pnpm build
+
+  docker:
+    name: Docker images and compose validation
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the slim runtime image (validates Dockerfile end-to-end)
+        run: docker build --target runner -t omnichat-runner:ci .
+      - name: Build the one-shot migrate image (compose provisioning path)
+        run: docker build --target migrate -t omnichat-migrate:ci .
+      - name: Validate both compose stacks (migrate wiring included)
+        run: |
+          POSTGRES_USER=u POSTGRES_PASSWORD=p \
+          AUTH_SECRET=a-very-long-ci-only-secret \
+          ENCRYPTION_SECRET_KEY=ci-encryption-secret-not-for-production \
+          docker compose -f docker-compose.yml config --quiet
+          docker compose -f docker-compose.sqlite.yml config --quiet
+
+  security-audit:
+    name: Dependency audit (advisory)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.8.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      # Advisory by design: a newly disclosed advisory should not red-line
+      # unrelated PRs, but the result must be visible on every run.
+      - name: pnpm audit (high and above)
+        run: pnpm audit --audit-level=high
+        continue-on-error: true
