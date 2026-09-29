@@ -80,9 +80,12 @@ export type CreateConversationRequest = z.infer<typeof createConversationSchema>
 export const updateConversationSchema = z.object({
     title: z.string().max(200).optional(),
     projectId: z.string().cuid().nullable().optional(),
+    // folderId is a free-form label: there is no Folder entity yet, so it
+    // cannot be ownership-validated (documented limitation, not a pin).
     folderId: z.string().cuid().nullable().optional(),
     archived: z.boolean().optional(),
-    isPinned: z.boolean().optional(),
+    // isPinned removed (M11): accepted-but-ignored dead contract; no DB
+    // column and no UI consumer. Add it back with the feature, not before.
     // Additional fields (e.g., model changes) can be added later.
 });
 

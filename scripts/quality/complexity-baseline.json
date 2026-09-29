@@ -9,7 +9,7 @@
   "src/app/api/conversations/[id]/route.ts": {"DELETE":8,"GET":6,"PATCH":13},
   "src/app/api/conversations/route.ts": {"DELETE":6,"GET":9,"POST":15},
   "src/app/api/health/route.ts": {"GET":9},
-  "src/app/api/metrics/route.ts": {"GET":1},
+  "src/app/api/metrics/route.ts": {"GET":2,"isAuthorized":5},
   "src/app/api/preferences/route.ts": {"GET":5,"PATCH":7},
   "src/app/api/projects/[id]/route.ts": {"DELETE":8},
   "src/app/api/projects/route.ts": {"GET":5,"keyGenerator":1,"POST":9},

@@ -31,13 +31,15 @@ describe("GET /api/health", () => {
         expect(JSON.stringify(body)).not.toContain(process.env.ENCRYPTION_SECRET_KEY);
     });
 
-    it.each([undefined, "", "x".repeat(31)])("reports an unavailable vault for invalid configuration (case %#)", async (secret) => {
+    it.each([undefined, "", "x".repeat(31)])("reports a degraded vault for invalid configuration (case %#)", async (secret) => {
         vi.stubEnv("ENCRYPTION_SECRET_KEY", secret);
         const response = await GET();
         expect(response.status).toBe(503);
         expect(response.headers.get("Cache-Control")).toBe("no-store");
         expect(await response.json()).toMatchObject({
-            status: "unhealthy", checks: { database: "up", encryption: "down" },
+            // Database works, vault does not: a real degraded tier, still 503
+            // so strict probes treat the instance as not-ready.
+            status: "degraded", checks: { database: "up", encryption: "down" },
         });
     });
 

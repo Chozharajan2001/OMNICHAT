@@ -35,7 +35,12 @@ const nextConfig: NextConfig = {
               "style-src 'self' 'unsafe-inline'", // Required for Tailwind
               "img-src 'self' data: blob:",
               "font-src 'self' data:",
-              "connect-src 'self' https: http:", // Allow API connections
+              // Audit M-CSP: `https: http:` wildcards allowed connects to ANY
+              // host (exfiltration surface). Provider calls happen
+              // server-side, so pages only ever need 'self'. `ipc:` /
+              // `http://ipc.localhost` are the Tauri 2 IPC transports (desktop
+              // build); websockets are dev-only for the HMR channel.
+              `connect-src 'self' ipc: http://ipc.localhost${process.env.NODE_ENV !== "production" ? " ws: wss:" : ""}`,
               "frame-ancestors 'none'",
               "base-uri 'self'",
               "form-action 'self'",

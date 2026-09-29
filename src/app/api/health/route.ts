@@ -44,11 +44,15 @@ export async function GET(): Promise<NextResponse<HealthStatus>> {
     console.error("Health check: Encryption key check failed", error);
   }
 
-  // Determine overall status
+  // Determine overall status (audit M-health): "degraded" is a real tier —
+  // the database works but the vault cannot decrypt keys (UI serves, chat
+  // breaks). Any non-healthy state still returns 503 for strict probes.
   const status: HealthStatus["status"] =
-    checks.database === "down" || checks.encryption === "down"
+    checks.database === "down"
       ? "unhealthy"
-      : "healthy";
+      : checks.encryption === "down"
+        ? "degraded"
+        : "healthy";
 
   const response: HealthStatus = {
     status,
