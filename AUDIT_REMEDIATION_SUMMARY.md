@@ -4,19 +4,19 @@
 
 Successfully completed comprehensive audit remediation for the OmniChat application, transforming it from a development prototype into a production-ready system with enterprise-grade security, performance, observability, and code quality.
 
-**Final Status (measured September 25, 2026):**
-- ✅ **823 tests passing** across 19 test files (up from 0)
+**Final Status (measured September 29, 2026 — after the full-application audit remediation, see Phase 5):**
+- ✅ **873 tests passing** across 23 test files (up from 0)
 - ✅ **Clean production build** with no TypeScript errors
-- ✅ **Lint: 0 errors, 0 warnings** across 129 files
-- ✅ **Complexity: 568 functions** at or below measured baseline
+- ✅ **Lint: 0 errors, 0 warnings** across 134 files
+- ✅ **Complexity: 572 functions** at or below measured baseline
 - ✅ **All critical and high security vulnerabilities resolved**
-- ✅ **Professional observability stack** (metrics, tracing, alerting)
+- ✅ **Professional observability stack** (metrics with token-gated endpoint, tracing, alerting)
 - ✅ **Enterprise-grade encryption** with PBKDF2 key derivation
 - ✅ **Email verification** with strict hosted policy (opt-in via env)
-- ✅ **CSRF protection** on all 10 custom mutation routes
+- ✅ **CSRF protection** on all custom mutation routes
 - ✅ **Distributed rate limiting** via Upstash REST Redis (fail-closed)
 - ✅ **Complete API documentation** (OpenAPI 3.0 specification)
-- ✅ **CI/CD pipeline** with quality gates, complexity monitoring, pre-commit hooks
+- ✅ **CI/CD pipeline** on the real default branch (`master`) with quality gates, complexity monitoring, pre-commit hooks, Docker image builds, and schema provisioning wired into compose
 
 ---
 
@@ -368,20 +368,20 @@ $ pnpm exec tsc --noEmit
 ### Git Status
 ```bash
 $ git log --oneline
-✅ 23 commits documenting Phase 1-4 work
-✅ Branch: audit-remediation-phase1-phase2
+✅ 38 commits on master (Phases 1-5; feature branch merged)
+✅ Branch: master (default)
 ✅ Clean working tree
 ```
 
 ### Statistics
-- **Files Changed**: 140 files modified/created across all phases
-- **Lines Added**: ~9,600+ lines of production code
-- **Tests Added**: 823 tests (up from 0)
-- **Test Files**: 19 (up from 0)
+- **Files Changed**: 150+ files modified/created across all phases
+- **Lines Added**: ~10,500+ lines of production code
+- **Tests Added**: 873 tests (up from 0)
+- **Test Files**: 23 (up from 0)
 - **Security**: All critical and high vulnerabilities resolved
 - **Performance**: 10x faster database queries
-- **Code Quality**: Lint 0/0, complexity 568 functions at baseline
-- **Commits**: 23 on branch `audit-remediation-phase1-phase2`
+- **Code Quality**: Lint 0/0, complexity 572 functions at baseline
+- **Commits**: 38 on `master`
 
 ---
 
@@ -392,7 +392,7 @@ $ git log --oneline
 - ✅ **Email Verification**: Strict hosted policy, hashed tokens, atomic consumption
 - ✅ **CSRF Protection**: Origin validation on all 10 custom mutation routes
 - ✅ **Rate Limiting**: Distributed via Upstash REST Redis, fail-closed
-- ✅ **Testing**: 823 passing tests across 19 files
+- ✅ **Testing**: 873 passing tests across 23 files
 - ✅ **Monitoring**: Health checks, metrics, tracing, alerting
 - ✅ **Documentation**: OpenAPI spec, ADRs, JSDoc comments
 - ✅ **Performance**: Optimized queries, caching, rate limiting
@@ -432,18 +432,81 @@ The OmniChat audit remediation has been **successfully completed**. The codebase
 - **Secure**: All critical vulnerabilities resolved, enterprise-grade encryption, email verification, CSRF protection, distributed rate limiting
 - **Performant**: Optimized queries, caching, rate limiting with Redis backend
 - **Observable**: Comprehensive metrics, tracing, and alerting
-- **Tested**: 823 passing tests across 19 files
+- **Tested**: 873 passing tests across 23 files
 - **Documented**: OpenAPI spec, ADRs, JSDoc comments
 - **Quality-Gated**: Lint 0/0, complexity baseline, CI pipeline, pre-commit hooks
 - **Production-Ready**: Clean build, deployment configs, environment-activated security
 
-**Total Effort**: 4 phases, 50+ tasks, 23 commits, 140 files changed, ~9,600+ lines of code
+**Total Effort**: 5 phases, 60+ tasks, 38 commits, 150+ files changed, ~10,500+ lines of code
 
 **Final Outcome**: A professional, production-ready application with enterprise-grade security, performance, observability, and maintainability. All security features are environment-activated (no breaking changes to existing deployments).
 
 ---
 
-*Updated September 25, 2026*
-*Branch: audit-remediation-phase1-phase2*
-*Commits: 23*
-*Tests: 823 passing*
+## Phase 5: Full-Application Audit Remediation (COMPLETE, September 29, 2026)
+
+An independent four-lane audit of the entire application (security, backend/data,
+frontend, infrastructure/deploy) was run after Phase 4, then every supported
+finding was fixed in test-gated batches:
+
+### Critical — deployment dead-on-arrival (commit `099864d`)
+- **Prisma Postgres runtime**: `src/lib/db/prisma.ts` now selects `PrismaPg`
+  for Postgres URLs and `PrismaLibSql` for `file:` URLs; the app boots on both.
+- **Schema provisioning**: the Dockerfile gained a one-shot `migrate` target
+  (`prisma db push`); the broken runtime entrypoint was deleted.
+
+### High — correctness and durability
+- **Chat persistence contract** (`8601d55`): user message persisted BEFORE
+  provider streaming (failed/aborted turns are no longer lost); `onAbort`
+  stores partial replies with a once-only guard; `onError` logs;
+  `Conversation.updatedAt` is touched every turn (list recency + cursor
+  paging); content-based dedup removed — prompt history is server-derived
+  from the database, not the client transcript; `projectId`/`folderId`
+  passthrough on chat-started conversations; persisted role is always the
+  server-side literal `"user"` with a 400 gate otherwise.
+- **Route error handling** (`5682460`): api-keys/preferences GETs return
+  sanitized 500s; project DELETE maps ownership failures to 404.
+- **Frontend stream targeting** (`233c830`): store gained id-targeted
+  `updateMessage(id, content)` — in-flight streams can no longer overwrite
+  the last message of a different conversation loaded mid-stream; error
+  bodies parsed defensively; `loadConversation` failures surfaced.
+
+### Medium batch (`d76ffe0`)
+- `/api/metrics`: bearer-token auth via `METRICS_TOKEN`, fail-closed 404 in
+  production when unset (10 new route tests).
+- `/api/health`: the declared-but-unused `degraded` tier is real (DB up +
+  vault down), still 503 for strict probes.
+- CSP `connect-src` wildcards (`https: http:`) removed — production pages
+  are `'self'`-only; dev keeps websockets for HMR.
+- `isPinned` removed from the conversation update contract (no DB column,
+  no consumer — dead API surface); `providerId`/`modelId` length-capped.
+- `Message @@index([conversationId, createdAt])` in BOTH Prisma schemas
+  (drift check green).
+
+### Deploy/CI (`80e4bfc`)
+- **Discovery**: the Git repository root is `omnichat/` — the compose stacks
+  and guides that lived only in the parent workspace directory were never
+  versioned. Both compose files were brought into the repo and wired with
+  the `migrate` service (`service_completed_successfully` gating the app),
+  including a chown handoff for the SQLite volume.
+- CI rewritten at the live path: triggers on `master` (the old `main` filter
+  meant CI never ran), Node 22 + pnpm 11.8, new `docker` job building both
+  image targets and validating both compose stacks, advisory `pnpm audit`.
+- Dockerfile pins `corepack prepare pnpm@11.8.0` (reproducible builds).
+- Tauri hardening: bundle no longer ships `node_modules` into the installer;
+  renderer CSP `connect-src` narrowed to `'self'` (provider traffic is
+  server-side; keys never reach the renderer).
+
+**Verification (measured September 29, 2026)**: `tsc` clean · 873/873 tests
+· quality 134 files 0/0 · drift check 9+9 models no drift · production build
+compiled · both compose stacks validate · `/api/metrics` auth covered by 10
+new route tests · chat route covered by 44 fault-injection tests including
+abort/double-write/role-injection paths · store id-targeting covered by 5
+regression tests.
+
+---
+
+*Updated September 29, 2026*
+*Branch: master*
+*Commits: 38*
+*Tests: 873 passing*
