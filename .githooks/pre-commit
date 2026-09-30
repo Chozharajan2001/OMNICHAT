@@ -1,5 +1,5 @@
 #!/bin/sh
-# Installed explicitly by pnpm hooks:install; never changes Git configuration.
+# Made active by package.json "prepare" (git config core.hooksPath .githooks).
 set -eu
 root=$(git rev-parse --show-toplevel)
 exec node "$root/scripts/quality/staged.mjs"

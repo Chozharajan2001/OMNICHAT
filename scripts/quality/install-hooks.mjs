@@ -5,9 +5,16 @@ import { projectRoot } from "./check.mjs";
 import { git } from "./staged.mjs";
 
 export async function installHook(root = projectRoot) {
-  const source = (await readFile(resolve(root, ".githooks/pre-commit"), "utf8")).replaceAll("\r\n", "\n");
+  const tracked = resolve(root, ".githooks/pre-commit");
+  const source = (await readFile(tracked, "utf8")).replaceAll("\r\n", "\n");
   const gitDir = resolve(root, git(root, ["rev-parse", "--git-common-dir"]).trim());
   const target = resolve(root, git(root, ["rev-parse", "--git-path", "hooks/pre-commit"]).trim());
+  // "prepare" points core.hooksPath at .githooks, so the tracked hook IS the
+  // active one; copying it into .git/hooks would install a hook git never runs.
+  if (target === tracked) {
+    console.log(`Tracked hook is already active via core.hooksPath: ${target}`);
+    return target;
+  }
   // Do not silently install into a shared/custom hooksPath.
   if (target !== resolve(gitDir, "hooks/pre-commit")) {
     throw new Error("A custom hooks directory is active. Integrate the tracked hook manually; no configuration was changed.");

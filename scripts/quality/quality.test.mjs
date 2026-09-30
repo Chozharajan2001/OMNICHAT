@@ -6,7 +6,7 @@ import { validateBaseline, projectRoot } from "./check.mjs";
 import { checkStaged, git } from "./staged.mjs";
 import { installHook } from "./install-hooks.mjs";
 import { mkdir, mkdtemp, readFile, writeFile, rm, stat } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 // Never let an inherited Git hook/alternate-index environment target the user's
 // repository while creating or staging files in disposable fixture repositories.
@@ -146,6 +146,19 @@ test("installer preserves Git config, normalizes line endings, and never overwri
   await assert.rejects(installHook(root), /already exists/);
   assert.deepEqual(await readFile(join(root, ".git/config")), before);
   assert.equal(await readFile(target, "utf8"), "#!/bin/sh\nexit 0\n");
+});
+
+test("installer reports the tracked hook when core.hooksPath already activates it", async (t) => {
+  const { root, put } = await fixture(t);
+  await put(".githooks/pre-commit", "#!/bin/sh\nexit 0\n");
+  // This mirrors the real repository: package.json "prepare" always sets it.
+  git(root, ["config", "core.hooksPath", ".githooks"]);
+  const tracked = resolve(root, ".githooks/pre-commit");
+  const before = await readFile(join(root, ".git/config"));
+  assert.equal(await installHook(root), tracked);
+  // No dead copy is written where Git will never run it.
+  await assert.rejects(stat(join(root, ".git/hooks/pre-commit")), { code: "ENOENT" });
+  assert.deepEqual(await readFile(join(root, ".git/config")), before);
 });
 
 test("tracked hook invokes the quality runner and propagates a failure without committing", async (t) => {
