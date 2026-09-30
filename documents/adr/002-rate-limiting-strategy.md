@@ -1,7 +1,9 @@
 # ADR-002: In-Memory Rate Limiting with LRU Eviction
 
 ## Status
-Accepted
+Accepted — **amended 2026-09-29** (see Amendment at the end): distributed
+fail-closed enforcement via Upstash Redis REST is now implemented; the
+in-memory LRU limiter remains the explicit fallback for dev/desktop mode.
 
 ## Context
 OmniChat uses rate limiting to reduce abuse on selected authentication and API paths. The current implementation favors in-process storage and bounded memory without an external service; it does not provide distributed enforcement or universal endpoint coverage.
@@ -90,3 +92,27 @@ A shared backend, adaptive limits, and rate-limit analytics are possible future 
 ## References
 - [OWASP Rate Limiting](https://cheatsheetseries.owasp.org/cheatsheets/Denial_of_Service_Cheat_Sheet.html)
 - [LRU Eviction](https://en.wikipedia.org/wiki/Cache_replacement_policies#LRU)
+
+## Amendment (2026-09-29): Distributed fail-closed backend implemented
+
+The "Deployment Considerations" limitation above ("Redis is a possible future
+option, not an implemented backend") is superseded by
+[src/lib/rate-limit-redis-rest.ts](../../src/lib/rate-limit-redis-rest.ts):
+
+- **Backend selection** (`resolveRateLimitBackend`, lazy so imports never need
+  live credentials): `RATE_LIMIT_BACKEND=redis-rest|memory`; when unset,
+  development and `DESKTOP_MODE=true` default to memory, everything else
+  defaults to redis-rest.
+- **Protocol**: fixed-window counters via Upstash HTTP REST
+  (`UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`, keys namespaced by
+  `RATE_LIMIT_PREFIX`), so counters are shared across processes/replicas and
+  survive restarts — closing the "Per-Process Only" negative above.
+- **Fail-closed**: invalid configuration, non-HTTPS URLs, HTTP errors, or
+  malformed responses raise `RateLimitBackendUnavailableError`; routes answer
+  **503 Service unavailable** instead of silently allowing unlimited traffic.
+  This inverts the memory limiter's failure mode (state loss on restart) into
+  an explicit unavailable state.
+- The synchronous in-memory limiter above is retained unchanged as the
+  dev/desktop backend, so local work still needs no external service.
+- Verified by tests in `src/lib/__tests__/` (21-entry complexity baseline
+  entry `resolveRateLimitBackend` documents the validation paths).

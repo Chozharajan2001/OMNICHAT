@@ -1,7 +1,9 @@
 # ADR-001: AES-256-GCM for API Key Encryption
 
 ## Status
-Accepted
+Accepted — **amended 2026-09-29** (see Amendment at the end): key derivation is
+now PBKDF2 with a per-encryption random salt in a versioned `v2:` envelope;
+the original SHA-256 (`v1`) records remain decryptable.
 
 ## Context
 OmniChat needs to encrypt user-provided API keys (BYOK - Bring Your Own Key) before storing them in the database. The encryption must be:
@@ -59,3 +61,27 @@ Use AES-256-GCM (Galois/Counter Mode) for encrypting API keys.
 ## References
 - [NIST SP 800-38D](https://csrc.nist.gov/publications/detail/sp/800-38d/final) - GCM specification
 - [OWASP Cryptographic Guidelines](https://owasp.org/www-project-web-security-testing-guide/)
+
+## Amendment (2026-09-29): PBKDF2 key derivation with versioned envelope
+
+The Key Derivation and Wire Format decisions above (SHA-256 of the secret,
+three-field `iv:ciphertext:authTag`) are superseded for NEW encryptions by
+[vault.ts](../../src/lib/crypto/vault.ts):
+
+- **v2 derivation**: PBKDF2-SHA256, **600,000 iterations** (OWASP-recommended
+  cost) over the `ENCRYPTION_SECRET_KEY` plus a **random 16-byte salt per
+  encryption**, producing the 32-byte AES key. A weak master secret is now far
+  harder to attack offline.
+- **v2 wire format**: `v2:salt:iv:ciphertext:authTag` (all hex); length/hex
+  validation runs BEFORE `Buffer.from` because hex decoding silently truncates
+  malformed input.
+- **Backward compatibility**: unversioned (`v1`, SHA-256-derived) records still
+  decrypt; `migrateToPBKDF2()` re-encrypts stored values on demand — gradual
+  migration without downtime.
+- This also softens the "Key Management" negative above: the vault now HAS key
+  versioning (the `v1`/`v2` prefix). Automatic rotation is still not performed;
+  changing the secret still requires re-encryption of existing records.
+- Covered by 45 vault tests (tampering, malformed envelopes, UTF-8, boundaries,
+  v1/v2 compatibility). The "IV Reuse" and "Record Binding" negatives are
+  unchanged: random IVs and salts persist, and no AAD binds ciphertext to a
+  user/provider record.
