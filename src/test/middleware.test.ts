@@ -19,13 +19,16 @@ const handle = middleware as unknown as (request: {
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 
 describe("readiness endpoint middleware matching", () => {
-    it.each(["/api/health", "/api/health?probe=1"])("allows unauthenticated probes at %s", (url) => {
+    it.each(["/api/health", "/api/health?probe=1", "/api/metrics", "/api/metrics?format=prom"])("allows unauthenticated probes at %s", (url) => {
         expect(matches(url)).toBe(false);
     });
 
+    // /api/metrics is exempted by exact match only; the bearer token in the route
+    // is the sole gate, so near-miss paths must stay session-protected.
     it.each([
         "/api/health/details", "/api/health-admin", "/api/providers",
         "/api/conversations", "/api/chat", "/api/projects", "/settings/account", "/api/auth-extra",
+        "/api/metrics/details", "/api/metrics-admin", "/api/metricss",
     ])("retains authentication for %s", (url) => {
         expect(matches(url)).toBe(true);
     });

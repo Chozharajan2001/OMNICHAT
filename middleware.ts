@@ -17,7 +17,9 @@ export default auth((req) => {
 export const config = {
     runtime: "nodejs",
     matcher: [
-        // Only the exact readiness endpoint is public outside the auth namespace.
-        "/((?!_next/static|_next/image|favicon.ico|api/auth(?:/|$)|api/health$|icons).*)",
+        // Public outside the auth namespace: the readiness probe, and the exact
+        // metrics path — a Prometheus scraper has no session, so /api/metrics is
+        // gated solely by its own METRICS bearer token (fail-closed 404).
+        "/((?!_next/static|_next/image|favicon.ico|api/auth(?:/|$)|api/health$|api/metrics$|icons).*)",
     ],
 };
