@@ -6,7 +6,7 @@ Successfully completed comprehensive audit remediation for the OmniChat applicat
 
 **Final Status (measured September 30, 2026, on `master` at the Phase 6 commit — see
 the Phase 6 section for what changed after Phase 5):**
-- ✅ **905 tests passing** across 24 test files (up from 0)
+- ✅ **907 tests passing** across 24 test files (up from 0)
 - ✅ **Clean production build** with no TypeScript errors
 - ✅ **Lint: 0 errors, 0 warnings** across 135 files
 - ✅ **Complexity: 572 functions** at or below measured baseline
@@ -255,7 +255,7 @@ the Phase 6 section for what changed after Phase 5):**
 - ✅ Health check endpoints
 
 ### Testing
-- ✅ **905 passing tests** across 24 test files (up from 0)
+- ✅ **907 passing tests** across 24 test files (up from 0)
 - ✅ Comprehensive vault edge case tests (51 tests)
 - ✅ Fault injection tests for chat routes (44 tests)
 - ✅ Email verification tests (replay, expiry, concurrency, enumeration)
@@ -319,7 +319,7 @@ the Phase 6 section for what changed after Phase 5):**
 - `scripts/quality/staged.mjs` - Staged snapshot checker
 - `scripts/quality/install-hooks.mjs` - Hook installer / hooksPath coexistence check
 - `scripts/quality/quality.test.mjs` - 15 quality tooling tests
-- 24 test files with 905 tests
+- 24 test files with 907 tests
 
 ### Files Modified (60+ files)
 - `src/lib/crypto/vault.ts` - PBKDF2 key derivation, v2 format
@@ -334,7 +334,8 @@ the Phase 6 section for what changed after Phase 5):**
 - `src/app/api/projects/route.ts` - CSRF, rate limiting
 - `src/app/api/projects/[id]/route.ts` - CSRF guard
 - `src/app/(auth)/login/page.tsx` - Verification prompt
-- `middleware.ts` - Health endpoint bypass, verification routes
+- `middleware.ts` - Health endpoint bypass, verification routes (relocated to
+  `src/proxy.ts` in Phase 6, where it is actually loaded by Next 16)
 - `package.json` - nodemailer, coverage, quality scripts
 - `eslint.config.mjs` - Quality plugin integration
 - `src-tauri/tauri.conf.json` - Enabled CSP, restricted API access
@@ -397,12 +398,12 @@ $ git log --oneline
 ### Statistics
 - **Files Changed**: 150+ files modified/created across all phases
 - **Lines Added**: ~10,500+ lines of production code
-- **Tests Added**: 905 tests (up from 0)
+- **Tests Added**: 907 tests (up from 0)
 - **Test Files**: 24 (up from 0)
 - **Security**: All critical and high vulnerabilities resolved
 - **Performance**: 10x faster database queries
 - **Code Quality**: Lint 0/0, complexity 572 functions at baseline
-- **Commits**: 47 on `master` (46 before the Phase 6 documentation commit)
+- **Commits**: 48 on `master` (through the guard fix)
 
 ---
 
@@ -413,7 +414,7 @@ $ git log --oneline
 - ✅ **Email Verification**: Strict hosted policy, hashed tokens, atomic consumption
 - ✅ **CSRF Protection**: Origin validation on all 10 custom mutation routes
 - ✅ **Rate Limiting**: Distributed via Upstash REST Redis, fail-closed
-- ✅ **Testing**: 905 passing tests across 24 files
+- ✅ **Testing**: 907 passing tests across 24 files
 - ✅ **Monitoring**: Health checks, metrics (bearer-gated, reachable without a
   session), tracing, alerting
 - ✅ **Documentation**: OpenAPI spec covering all 15 routes, ADRs, JSDoc comments
@@ -457,12 +458,12 @@ The OmniChat audit remediation has been **successfully completed**. The codebase
 - **Secure**: All critical vulnerabilities resolved, enterprise-grade encryption, email verification, CSRF protection, distributed rate limiting
 - **Performant**: Optimized queries, caching, rate limiting with Redis backend
 - **Observable**: Comprehensive metrics, tracing, and alerting
-- **Tested**: 905 passing tests across 24 files
+- **Tested**: 907 passing tests across 24 files
 - **Documented**: OpenAPI spec, ADRs, JSDoc comments
 - **Quality-Gated**: Lint 0/0, complexity baseline, CI pipeline, pre-commit hooks
 - **Production-Ready**: Clean build, deployment configs, environment-activated security
 
-**Total Effort**: 6 phases, 60+ tasks, 47 commits, 150+ files changed, ~10,500+ lines of code
+**Total Effort**: 6 phases, 60+ tasks, 48 commits, 150+ files changed, ~10,500+ lines of code
 
 **Final Outcome**: A professional, production-ready application with enterprise-grade security, performance, observability, and maintainability. All security features are environment-activated (no breaking changes to existing deployments).
 
@@ -544,7 +545,8 @@ and that four of its inaccuracies were concealing real defects.
 
 | Commit | Defect | Fix |
 |---|---|---|
-| `5562888` | `/api/metrics` was unreachable by any scraper: the root middleware exempted only `/api/health`, so the endpoint demanded a session cookie *before* its bearer check could run | `api/metrics$` added to the matcher's negative lookahead (anchored, so `/api/metrics-admin` and friends stay protected). Accepted trade-off: outside production with `METRICS_TOKEN` unset it is sessionless-readable; production remains fail-closed 404 |
+| `5562888` | The matcher exempted only `/api/health`, so as *configured* `/api/metrics` would have demanded a session cookie before its bearer check could run - no scraper could reach it | `api/metrics$` added to the negative lookahead (anchored, so near-miss paths stay protected). Accepted trade-off: outside production with `METRICS_TOKEN` unset it is sessionless-readable; production remains fail-closed 404. **Premise corrected below**: live probing showed the guard was not running at all, so this exemption only became meaningful with the next row's fix |
+| (this commit) | **The session guard never ran.** `middleware.ts` sat at the repo root while the app uses a `src/` layout; Next 16 loads the guard only from `src/`, and 16 renamed it to `proxy.ts`. It compiled and `.next/server/middleware.js` was produced, but nothing was registered - and 16 also rejects `config.runtime`, which a proxy no longer accepts (that error only surfaced once the file was in the right place). Consequences measured live before the fix: `/chat` returned 200 and an unknown path such as `/account` returned 404 with no session present, i.e. no page-level authentication at all; the root page's own redirect was masking it on `/` | Moved to `src/proxy.ts`, dropped `config.runtime`, retargeted the matcher test, added a placement regression test (a misplaced guard fails silently, so the test asserts the file lives in `src/` and no root `middleware.ts` returns), corrected guard wording in README/spec/comments, and removed the pointless root entry from the complexity scope. **Verified against the production server** (`pnpm start`): `/chat` and `/account` → 302 `/login`, `/login` → 200, `/api/providers` and `/api/conversations` → 401, `/api/health` → 200, `/api/metrics` → 404 fail-closed with `METRICS_TOKEN` unset; with `METRICS_TOKEN` set: no header → 404, wrong bearer → 404, correct bearer → 200. Build output lists `ƒ Proxy (Middleware)` |
 | `37998bb` | `pnpm hooks:install` threw on every fresh install, because `prepare` always sets `core.hooksPath=.githooks` and the installer refused any custom hooks directory | Idempotent: when the resolved target already IS the tracked hook, report it and return. The refusal is kept for a genuinely foreign directory. Stale header comment in `.githooks/pre-commit` corrected |
 | `c537caa` | Nothing pinned pnpm locally while CI and Docker pin 11.8.0 | `"packageManager": "pnpm@11.8.0"`; verified with corepack absent that install and the gate still run |
 | `be0936a` | `.env.example` omitted three variables the code reads | `METRICS_TOKEN`, `NEXTAUTH_SECRET` (legacy fallback), `SMTP_TEST_ALLOW_INSECURE` documented with their fail-closed behavior |
@@ -575,11 +577,25 @@ and that four of its inaccuracies were concealing real defects.
   the Executive Summary and this section state current numbers.
 
 **Verification (measured September 30, 2026, on `master`)**: `tsc` clean ·
-**905 tests passing across 24 files** · quality **135 files, 0 errors,
+**907 tests passing across 24 files** · quality **135 files, 0 errors,
 0 warnings**, **572 functions** at baseline · 15 quality tooling tests ·
 production build compiled (the type-check phase needed
 `NODE_OPTIONS=--max-old-space-size=8192` under the local memory ceiling) ·
-47 commits after this one, clean working tree, 41 ahead of `origin/master`.
+48 commits including this one, clean working tree, 42 ahead of `origin/master`.
+
+Two claims in this phase were only settled by running things rather than reading
+code, and one of them overturned a premise I had written down:
+
+- The OpenAPI contract test was mutation-checked by deleting `/chat` from the
+  spec and adding a bogus `ApiKey` field: four assertions failed, then the file
+  was restored byte-for-byte (`git status` clean, `git diff` empty). A guard that
+  never fails is not a guard.
+- The metrics-exemption finding was **wrong as stated**. Live probing the
+  production server showed `/api/metrics` answering 200 with no session and no
+  token, which could only mean the guard was not running - leading directly to
+  the `src/proxy.ts` relocation above. Both the matcher assertions in
+  `src/test/proxy.test.ts` and the per-route `getServerSession()` checks had
+  looked sufficient; only an actual HTTP request exposed the gap.
 
 **Still not done by design**: pushing and deploying remain owner decisions.
 
@@ -587,5 +603,5 @@ production build compiled (the type-check phase needed
 
 *Updated September 30, 2026 (Phase 6)*
 *Branch: master*
-*Commits: 47 including this one*
-*Tests: 905 passing across 24 files*
+*Commits: 48 including this one*
+*Tests: 907 passing across 24 files*

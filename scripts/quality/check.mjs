@@ -33,7 +33,7 @@ export async function qualityEngine({ root = projectRoot, baseline, onMeasure } 
     cwd: root,
     overrideConfigFile: resolve(root, "eslint.config.mjs"),
     overrideConfig: [{
-      files: ["src/**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}", "middleware.ts"],
+      files: ["src/**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}"],
       ignores: ["**/*.test.*", "**/*.d.{ts,mts,cts}", "src/generated/**"],
       plugins: { quality: { rules: { complexity: createComplexityRule({ root, baseline, onMeasure }) } } },
       rules: { "quality/complexity": "error" },

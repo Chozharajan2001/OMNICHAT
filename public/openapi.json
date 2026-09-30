@@ -3,7 +3,7 @@
   "info": {
     "title": "OmniChat API",
     "version": "1.1.0",
-    "description": "OmniChat is a desktop-first, self-hostable AI chat workspace with BYOK (Bring Your Own Key) support. This API covers conversations, messages, projects, provider credentials, user preferences, streaming chat and operational endpoints.\n\nEvery path below is relative to the `/api` base in `servers`. Authentication is the NextAuth session cookie, enforced by root middleware for all paths except `/health` and the exact `/metrics` (which is gated by its bearer token instead) and the `/auth/*` namespace. Mutations with a JSON body additionally require a same-origin `Origin`/`Referer` (403), a JSON content type (415), and a resolvable canonical origin (503 when `APP_ORIGIN`/`NEXTAUTH_URL` are unset in production).",
+    "description": "OmniChat is a desktop-first, self-hostable AI chat workspace with BYOK (Bring Your Own Key) support. This API covers conversations, messages, projects, provider credentials, user preferences, streaming chat and operational endpoints.\n\nEvery path below is relative to the `/api` base in `servers`. Authentication is the NextAuth session cookie, enforced by the route guard in src/proxy.ts for all paths except `/health` and the exact `/metrics` (which is gated by its bearer token instead) and the `/auth/*` namespace. Mutations with a JSON body additionally require a same-origin `Origin`/`Referer` (403), a JSON content type (415), and a resolvable canonical origin (503 when `APP_ORIGIN`/`NEXTAUTH_URL` are unset in production).",
     "contact": {
       "name": "OmniChat Support",
       "url": "https://github.com/your-org/omnichat"
@@ -58,7 +58,7 @@
     "/health": {
       "get": {
         "summary": "Health check",
-        "description": "Readiness probe for monitors and container healthchecks; exempt from the session middleware. Probes both the database and the encryption secret.",
+        "description": "Readiness probe for monitors and container healthchecks; exempt from the session guard in src/proxy.ts. Probes both the database and the encryption secret.",
         "operationId": "getHealth",
         "tags": [
           "System"
@@ -125,7 +125,7 @@
     "/metrics": {
       "get": {
         "summary": "Prometheus metrics",
-        "description": "Prometheus text exposition. Deliberately exempt from the session middleware so a scraper can reach it; the bearer token is therefore the ONLY gate. Fails closed: with `METRICS_TOKEN` unset in production, and on any token mismatch, the response is 404 with an empty body so the surface is not advertised. With the token unset outside production the endpoint is open for local debugging.",
+        "description": "Prometheus text exposition. Deliberately exempt from the session guard in src/proxy.ts so a scraper can reach it; the bearer token is therefore the ONLY gate. Fails closed: with `METRICS_TOKEN` unset in production, and on any token mismatch, the response is 404 with an empty body so the surface is not advertised. With the token unset outside production the endpoint is open for local debugging.",
         "operationId": "getMetrics",
         "tags": [
           "System"
@@ -1230,7 +1230,7 @@
     "/auth/register": {
       "post": {
         "summary": "Register an account and send the verification mail",
-        "description": "Registered under /api/auth/* and therefore outside the session middleware. Answered only when EMAIL_VERIFICATION_REQUIRED=true; otherwise 404. Rate limited per IP (10/hour) and per normalized address (3/hour). Passwords must be 8+ characters (72-byte cap) with upper, lower and a digit; the schema is strict, so unknown fields are rejected.",
+        "description": "Registered under /api/auth/* and therefore outside the session guard in src/proxy.ts. Answered only when EMAIL_VERIFICATION_REQUIRED=true; otherwise 404. Rate limited per IP (10/hour) and per normalized address (3/hour). Passwords must be 8+ characters (72-byte cap) with upper, lower and a digit; the schema is strict, so unknown fields are rejected.",
         "operationId": "register",
         "tags": [
           "Authentication"
@@ -1580,7 +1580,7 @@
       "metricsToken": {
         "type": "http",
         "scheme": "bearer",
-        "description": "Value of METRICS_TOKEN, compared in constant time. The only gate on /metrics, which is exempt from the session middleware."
+        "description": "Value of METRICS_TOKEN, compared in constant time. The only gate on /metrics, which is exempt from the session guard in src/proxy.ts."
       }
     },
     "parameters": {
@@ -1606,7 +1606,7 @@
     },
     "responses": {
       "Unauthorized": {
-        "description": "No session. The root middleware answers 401 for /api paths instead of redirecting to /login.",
+        "description": "No session. The route guard answers 401 for /api paths instead of redirecting to /login.",
         "headers": {
           "Cache-Control": {
             "schema": {

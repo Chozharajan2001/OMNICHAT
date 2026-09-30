@@ -144,6 +144,11 @@ This repository uses pnpm (not npm). The Git root is `omnichat/` (not the parent
 - Schema changes: update BOTH `prisma/schema.prisma` and `prisma/schema.sqlite.prisma`, then run `pnpm db:drift-check`
 - Complexity: new functions must stay at complexity ≤ 10; update baseline with `pnpm quality:baseline` only when justified
 - Tests: node tests in `src/**/*.test.ts`, UI tests in `src/**/*.test.tsx`
+- Route guard (session check, page redirects, public-path exemptions) lives at
+  `src/proxy.ts`. Next 16 loads it only from `src/` and renamed middleware to
+  proxy; a root-level `middleware.ts` compiles but registers nothing, so the
+  guard silently does nothing. Do not move it back, and do not add
+  `config.runtime` — a proxy always runs on Node.js
 - Security env vars are opt-in; never hardcode secrets or commit `.env`
 - The `omnichat.db` file is gitignored; never track database files
 - Agent sessions/memories bind to the opened workspace folder. Open the IDE at the repo root (`omnichat/`) — not the non-git parent — so Better Harness session evidence resolves; opening the parent leaves the session lane empty (`eligibleSessions=0`).
@@ -175,6 +180,6 @@ it completes successfully. There is no runtime entrypoint.
 
 `/api/metrics` is token-protected: set `METRICS_TOKEN` to allow Prometheus
 scrapes via `Authorization: Bearer <token>`; in production an unset token
-makes the endpoint respond 404. The path is exempt from the session
-middleware precisely so that a scraper can reach it - the bearer token is
-its only gate.
+makes the endpoint respond 404. The path is exempt from the session guard
+(`src/proxy.ts`) precisely so that a scraper can reach it - the bearer token
+is its only gate.

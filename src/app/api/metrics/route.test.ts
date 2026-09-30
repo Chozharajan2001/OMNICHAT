@@ -5,8 +5,8 @@ import { GET } from "./route";
 // Access control contract for the metrics surface (audit M-metrics):
 // token-protected, fail-closed in production, open only outside production.
 // The real metrics registry is used; no external seams are needed.
-// The root middleware exempts this exact path so a session-less scraper can
-// reach it, which makes these checks the endpoint's ONLY gate.
+// The route guard (src/proxy.ts) exempts this exact path so a session-less
+// scraper can reach it, which makes these checks the endpoint's ONLY gate.
 
 function request(authorization?: string) {
     return new NextRequest("http://localhost/api/metrics", {

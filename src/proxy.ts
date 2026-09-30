@@ -1,3 +1,7 @@
+// Next 16 renamed middleware.ts to proxy.ts, and with a src/ layout the file is
+// only loaded from src/ — a root-level middleware.ts compiles but registers
+// nothing (empty middleware-manifest), leaving the guard silently inert. It also
+// rejects `config.runtime`: a proxy always runs on Node.js.
 import { auth } from "@/lib/auth/config";
 
 export default auth((req) => {
@@ -15,7 +19,6 @@ export default auth((req) => {
 });
 
 export const config = {
-    runtime: "nodejs",
     matcher: [
         // Public outside the auth namespace: the readiness probe, and the exact
         // metrics path — a Prometheus scraper has no session, so /api/metrics is

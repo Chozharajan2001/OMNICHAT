@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { existsSync, readFileSync } from "node:fs";
 import { unstable_doesMiddlewareMatch } from "next/experimental/testing/server";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import middleware, { config } from "../../middleware";
+import proxy, { config } from "../proxy";
 import RegisterPage from "@/app/(auth)/register/page";
 import VerifyEmailPage from "@/app/(auth)/verify-email/page";
 
@@ -12,13 +13,32 @@ vi.mock("@/lib/auth/config", () => ({ auth: vi.fn((handler) => handler) }));
 function matches(url: string) {
     return unstable_doesMiddlewareMatch({ config, nextConfig: {}, url });
 }
-const handle = middleware as unknown as (request: {
+const handle = proxy as unknown as (request: {
     nextUrl: URL; auth: { user: { id: string } } | null;
 }) => Response | undefined;
 
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 
-describe("readiness endpoint middleware matching", () => {
+describe("guard placement (Next 16 loads it only from src/)", () => {
+    // A root-level middleware.ts still COMPILES while registering nothing, so a
+    // misplaced guard fails silently: every page becomes reachable without a
+    // session. These assertions make that failure mode loud instead.
+    const root = new URL("../../", import.meta.url);
+
+    it("lives at src/proxy.ts, not the retired root middleware.ts", () => {
+        expect(() => readFileSync(new URL("src/proxy.ts", root), "utf8")).not.toThrow();
+        expect(existsSync(new URL("middleware.ts", root))).toBe(false);
+    });
+
+    it("declares no runtime, which a proxy rejects", () => {
+        const source = readFileSync(new URL("src/proxy.ts", root), "utf8");
+        expect(config.matcher).toBeInstanceOf(Array);
+        expect(config).not.toHaveProperty("runtime");
+        expect(source).not.toContain('runtime: "nodejs"');
+    });
+});
+
+describe("readiness and metrics endpoint guard matching", () => {
     it.each(["/api/health", "/api/health?probe=1", "/api/metrics", "/api/metrics?format=prom"])("allows unauthenticated probes at %s", (url) => {
         expect(matches(url)).toBe(false);
     });

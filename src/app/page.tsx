@@ -1,6 +1,7 @@
 // src/app/page.tsx
 // ────────────────────────────────────────────────────────────────
-// Home page - redirects to chat (middleware will handle auth).
+// Home page - redirects to chat when a session exists (src/proxy.ts also
+// redirects unauthenticated page requests before this runs).
 // ────────────────────────────────────────────────────────────────
 
 import { redirect } from "next/navigation";
