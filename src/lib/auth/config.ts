@@ -46,16 +46,31 @@ export async function authorizePassword(credentials: Partial<Record<"email" | "p
         ]);
         if (results.some((result) => result.limited)) return null;
         return await authenticatePassword(parsed.data, password);
-    } catch {
+    } catch (error) {
         // Including async rate-limiter outages: fail closed, never log credentials.
+        // Logged because Auth.js only shows the user "CredentialsSignin", which
+        // otherwise hides a misconfigured RATE_LIMIT_BACKEND or a missing table.
+        console.error("Sign-in refused by a fail-closed dependency:", error);
         return null;
     }
 }
 
 const adapter = PrismaAdapter(prisma);
 
+// Auth.js refuses any Host header it was never told to trust, and the failure is
+// opaque to users: every production sign-in lands on /login?error=Configuration.
+// Trust is granted when the operator pinned a canonical origin (the same value
+// the CSRF guard resolves) or asked for it explicitly.
+export function shouldTrustHost(
+    env: Readonly<Record<string, string | undefined>> = process.env,
+): boolean {
+    if (env.AUTH_TRUST_HOST?.toUpperCase() === "TRUE") return true;
+    return Boolean(env.APP_ORIGIN || env.AUTH_URL || env.NEXTAUTH_URL);
+}
+
 export const authConfig = {
     secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
+    trustHost: shouldTrustHost(),
     adapter: {
         ...adapter,
         getUserByEmail: (email) => findEmailAccount(normalizeAccountEmail(email)),

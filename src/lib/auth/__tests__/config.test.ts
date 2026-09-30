@@ -21,7 +21,7 @@ vi.mock("@/lib/rate-limit", () => ({
     createRateLimiter: () => ({ check: mocks.emailCheck }), getClientIp: mocks.ip,
 }));
 
-import { authorizePassword, authConfig } from "../config";
+import { authorizePassword, authConfig, shouldTrustHost } from "../config";
 import { getServerSession, requireAuth } from "../session";
 import { requireAuth as requireApiAuth } from "@/lib/api/middleware";
 import { validatePasswordComplexity } from "../email-policy";
@@ -104,11 +104,19 @@ describe("credential authorization", () => {
         expect(mocks.find).not.toHaveBeenCalled();
     });
 
-    it("fails closed on configuration or database errors", async () => {
+    it("fails closed on configuration or database errors, and says why in the log", async () => {
+        const spy = vi.spyOn(console, "error").mockImplementation(() => {});
         mocks.configure.mockImplementationOnce(() => { throw new Error("SMTP secret"); });
         expect(await authorizePassword(credentials, request)).toBeNull();
         mocks.find.mockRejectedValue(new Error("DB secret"));
         expect(await authorizePassword(credentials, request)).toBeNull();
+        // Auth.js only surfaces "CredentialsSignin"; the operator needs a cause.
+        expect(spy).toHaveBeenCalledWith(
+            "Sign-in refused by a fail-closed dependency:",
+            expect.any(Error),
+        );
+        expect(spy.mock.calls.join(" ")).not.toMatch(/Password1/);
+        spy.mockRestore();
     });
 
     it.each([{ email: 123, password: "Password1" }, { email: "invalid", password: "Password1" }, { email: user.email, password: {} }])("rejects malformed credentials %j", async (data) => {
@@ -208,5 +216,32 @@ describe("old JWTs, OAuth, and server session enforcement", () => {
         mocks.find.mockResolvedValue({ ...user, emailVerified: new Date() });
         await authConfig.adapter.updateUser({ id: "u1", email: "changed@example.com", emailVerified: new Date() });
         expect(mocks.adapterUpdate).toHaveBeenCalledWith({ id: "u1", email: "changed@example.com", emailVerified: null });
+    });
+});
+
+describe("Auth.js host trust resolution", () => {
+    // Without trustHost, every production sign-in dies on ?error=Configuration.
+    // NEXTAUTH_URL alone does NOT satisfy Auth.js v5, so a canonical origin is
+    // treated as the operator's declaration that the host may be trusted.
+    it("refuses to trust a host that was never declared", () => {
+        expect(shouldTrustHost({ NODE_ENV: "production" })).toBe(false);
+    });
+
+    it.each([
+        ["APP_ORIGIN", { APP_ORIGIN: "https://chat.example.com" }],
+        ["AUTH_URL", { AUTH_URL: "https://chat.example.com" }],
+        ["NEXTAUTH_URL", { NEXTAUTH_URL: "https://chat.example.com" }],
+        ["AUTH_TRUST_HOST=TRUE", { AUTH_TRUST_HOST: "TRUE" }],
+        ["AUTH_TRUST_HOST=true", { AUTH_TRUST_HOST: "true" }],
+    ])("trusts the host when %s is configured", (_name, env) => {
+        expect(shouldTrustHost(env)).toBe(true);
+    });
+
+    it("ignores an empty origin placeholder from compose interpolation", () => {
+        expect(shouldTrustHost({ APP_ORIGIN: "", AUTH_URL: "", NEXTAUTH_URL: "" })).toBe(false);
+    });
+
+    it("wires the resolution into authConfig", () => {
+        expect(authConfig.trustHost).toBe(shouldTrustHost());
     });
 });

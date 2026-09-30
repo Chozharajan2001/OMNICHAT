@@ -69,7 +69,10 @@ Optional (security hardening for hosted deployments):
 - `APP_ORIGIN` — canonical HTTPS origin for CSRF validation
 - `EMAIL_VERIFICATION_REQUIRED=true` — enable strict email verification
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` — email delivery
-- `RATE_LIMIT_BACKEND=redis-rest` — enable distributed rate limiting
+- `RATE_LIMIT_BACKEND=redis-rest` — enable distributed rate limiting. Note that
+  production resolves to `redis-rest` when unset and fails closed without valid
+  Upstash credentials, refusing every sign-in; a single instance should set
+  `RATE_LIMIT_BACKEND=memory` (the compose stacks and `render.yaml` do this)
 - `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `RATE_LIMIT_PREFIX`
 - `METRICS_TOKEN` — bearer token that gates `/api/metrics`; unset means the
   endpoint answers 404 in production (see the Docker section below)
@@ -177,6 +180,15 @@ builds, a non-root runtime user, and health probes against the auth-free
 Schema provisioning is a one-shot `migrate` compose service (the Dockerfile's
 `migrate` target runs `prisma db push`); the app container only starts after
 it completes successfully. There is no runtime entrypoint.
+
+**First account on a fresh deployment:** automatic account creation on sign-in is
+deliberately limited to development and desktop mode (`canAutoCreateAccount()` in
+`src/lib/auth/email-policy.ts`). With `NODE_ENV=production` and
+`EMAIL_VERIFICATION_REQUIRED` unset, the register endpoint answers 404 and the
+login form creates nothing, so no one can sign in until either email
+verification is configured (SMTP vars, then register → verify → sign in) or a
+row is inserted directly. A bootstrap command for the operator's first account is
+an open item — until it exists, plan one of those two paths for a new host.
 
 `/api/metrics` is token-protected: set `METRICS_TOKEN` to allow Prometheus
 scrapes via `Authorization: Bearer <token>`; in production an unset token

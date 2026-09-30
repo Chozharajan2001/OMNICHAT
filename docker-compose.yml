@@ -68,6 +68,15 @@ services:
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       # Metrics scrape token (optional): unset hides /api/metrics entirely
       METRICS_TOKEN: ${METRICS_TOKEN:-}
+      # Rate limiting. Production resolves to redis-rest unless told otherwise,
+      # and redis-rest without Upstash credentials fails CLOSED - which is how a
+      # stock deployment ends up refusing every sign-in. A single container is
+      # safe on the in-memory limiter; switch to redis-rest (and fill the Upstash
+      # vars) when running more than one instance.
+      RATE_LIMIT_BACKEND: ${RATE_LIMIT_BACKEND:-memory}
+      UPSTASH_REDIS_REST_URL: ${UPSTASH_REDIS_REST_URL:-}
+      UPSTASH_REDIS_REST_TOKEN: ${UPSTASH_REDIS_REST_TOKEN:-}
+      RATE_LIMIT_PREFIX: ${RATE_LIMIT_PREFIX:-omnichat}
       # Node
       NODE_ENV: production
     depends_on:

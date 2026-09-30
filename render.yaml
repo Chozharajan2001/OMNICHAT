@@ -23,6 +23,13 @@ services:
         generateValue: true
       - key: NEXTAUTH_URL
         value: https://omnichat.onrender.com
+      # Render runs one web instance, so the in-memory limiter is sufficient.
+      # Production otherwise resolves to redis-rest and fails closed without
+      # Upstash credentials - which would refuse every sign-in. Set
+      # RATE_LIMIT_BACKEND=redis-rest plus the UPSTASH_* vars only for a
+      # multi-instance plan.
+      - key: RATE_LIMIT_BACKEND
+        value: memory
 
 # PostgreSQL Database
 databases:
