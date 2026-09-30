@@ -37,9 +37,14 @@ const nextConfig: NextConfig = {
               "font-src 'self' data:",
               // Audit M-CSP: `https: http:` wildcards allowed connects to ANY
               // host (exfiltration surface). Provider calls happen
-              // server-side, so pages only ever need 'self'. `ipc:` /
-              // `http://ipc.localhost` are the Tauri 2 IPC transports (desktop
-              // build); websockets are dev-only for the HMR channel.
+              // server-side, so pages only ever need 'self'; websockets are
+              // dev-only for the HMR channel. This header is what actually
+              // governs the desktop renderer: src-tauri points its webview at
+              // http://localhost:3000, so tauri.conf.json's own `csp` never
+              // applies to this document. `ipc:` / `http://ipc.localhost` are
+              // allowance for Tauri's IPC transport, which no call site uses
+              // today (@tauri-apps/api is not a dependency) — kept because
+              // adding a command would otherwise need a change here.
               `connect-src 'self' ipc: http://ipc.localhost${process.env.NODE_ENV !== "production" ? " ws: wss:" : ""}`,
               "frame-ancestors 'none'",
               "base-uri 'self'",

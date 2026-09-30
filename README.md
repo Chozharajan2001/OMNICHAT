@@ -71,6 +71,9 @@ Optional (security hardening for hosted deployments):
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` — email delivery
 - `RATE_LIMIT_BACKEND=redis-rest` — enable distributed rate limiting
 - `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `RATE_LIMIT_PREFIX`
+- `METRICS_TOKEN` — bearer token that gates `/api/metrics`; unset means the
+  endpoint answers 404 in production (see the Docker section below)
+- `NEXTAUTH_SECRET` — accepted as a legacy fallback when `AUTH_SECRET` is absent
 
 See `.env.example` for the full annotated reference.
 
