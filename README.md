@@ -175,4 +175,6 @@ it completes successfully. There is no runtime entrypoint.
 
 `/api/metrics` is token-protected: set `METRICS_TOKEN` to allow Prometheus
 scrapes via `Authorization: Bearer <token>`; in production an unset token
-makes the endpoint respond 404.
+makes the endpoint respond 404. The path is exempt from the session
+middleware precisely so that a scraper can reach it - the bearer token is
+its only gate.

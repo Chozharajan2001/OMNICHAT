@@ -4,10 +4,11 @@
 
 Successfully completed comprehensive audit remediation for the OmniChat application, transforming it from a development prototype into a production-ready system with enterprise-grade security, performance, observability, and code quality.
 
-**Final Status (measured September 29, 2026 — after the full-application audit remediation, see Phase 5):**
-- ✅ **873 tests passing** across 23 test files (up from 0)
+**Final Status (measured September 30, 2026, on `master` at the Phase 6 commit — see
+the Phase 6 section for what changed after Phase 5):**
+- ✅ **905 tests passing** across 24 test files (up from 0)
 - ✅ **Clean production build** with no TypeScript errors
-- ✅ **Lint: 0 errors, 0 warnings** across 134 files
+- ✅ **Lint: 0 errors, 0 warnings** across 135 files
 - ✅ **Complexity: 572 functions** at or below measured baseline
 - ✅ **All critical and high security vulnerabilities resolved**
 - ✅ **Professional observability stack** (metrics with token-gated endpoint, tracing, alerting)
@@ -15,8 +16,15 @@ Successfully completed comprehensive audit remediation for the OmniChat applicat
 - ✅ **Email verification** with strict hosted policy (opt-in via env)
 - ✅ **CSRF protection** on all custom mutation routes
 - ✅ **Distributed rate limiting** via Upstash REST Redis (fail-closed)
-- ✅ **Complete API documentation** (OpenAPI 3.0 specification)
+- ✅ **OpenAPI 3.0 spec covering all 15 routes**, bound to the code by a
+  route-contract test (Phase 6)
 - ✅ **CI/CD pipeline** on the real default branch (`master`) with quality gates, complexity monitoring, pre-commit hooks, Docker image builds, and schema provisioning wired into compose
+
+> Earlier sections record what was true when they were written. Two of their
+> numbers were superseded by later phases and, until Phase 6, the file disagreed
+> with itself (873/23/134/572 in the header against 823/19/129/568 in the body).
+> Only this block and the Phase 6 block carry numbers measured from the current
+> tree; the historical figures are labelled as such rather than silently rewritten.
 
 ---
 
@@ -85,7 +93,10 @@ Successfully completed comprehensive audit remediation for the OmniChat applicat
 ### API Design Enhancements
 - **Rate Limiting**: Added to projects API (30 requests/minute per user)
 - **Query Validation**: Implemented limit clamping (1-100 range)
-- **Response Envelopes**: Standardized to `{ data: { ... } }` format
+- **Response Envelopes**: `{ data: { ... } }` introduced on `/api/projects` only.
+  Phase 6 corrected the original claim of a blanket standardization: no other
+  route returns an envelope, and the `src/lib/api/middleware.ts` helpers that
+  would have produced one are not used by any route handler.
 - **Pagination**: Cursor-based pagination for conversations
 - **API Versioning**: Defined constants for future implementation
 
@@ -186,7 +197,7 @@ Successfully completed comprehensive audit remediation for the OmniChat applicat
 - **Brute Force Resistance**: Computationally expensive key derivation
 
 ### 4.5 Polish
-- **Lint**: 0 errors, 0 warnings across 129 files (was 20 problems)
+- **Lint**: 0 errors, 0 warnings across 135 files (was 20 problems)
   - Fixed React hooks (useJsonResource, usePreferences, useApiKeys)
   - Removed unused imports across settings pages and components
   - Replaced HTML anchor with Next.js Link
@@ -197,10 +208,14 @@ Successfully completed comprehensive audit remediation for the OmniChat applicat
   - Production build verification
   - Cross-platform matrix (ubuntu + windows)
 - **Pre-commit Hooks**: Tracked `.githooks/pre-commit` with quality runner
-  - Install via `pnpm hooks:install` (never modifies git config)
+  - Wired automatically by `pnpm install` via the `prepare` script
+    (`git config core.hooksPath .githooks`) — this is what actually activates the
+    hook; the earlier "opt-in, never modifies git config" wording was wrong
+  - `pnpm hooks:install` copies the hook for setups without a hooksPath, and
+    reports the tracked hook as already active when `core.hooksPath` points at it
   - Staged snapshot checks without index mutation
-  - 14 quality tooling tests verify hook behavior
-- **Complexity Monitoring**: Per-function baseline (568 functions measured)
+  - 15 quality tooling tests verify hook behavior
+- **Complexity Monitoring**: Per-function baseline (572 functions measured)
   - Regression detection in CI (new functions limited to complexity 10)
   - Baseline updates require explicit `pnpm quality:baseline`
 - **Vault Test Fix**: 6 tests accidentally registered as TODOs now execute properly
@@ -240,33 +255,35 @@ Successfully completed comprehensive audit remediation for the OmniChat applicat
 - ✅ Health check endpoints
 
 ### Testing
-- ✅ **823 passing tests** across 19 test files (up from 0)
+- ✅ **905 passing tests** across 24 test files (up from 0)
 - ✅ Comprehensive vault edge case tests (51 tests)
-- ✅ Fault injection tests for chat routes (38 tests)
+- ✅ Fault injection tests for chat routes (44 tests)
 - ✅ Email verification tests (replay, expiry, concurrency, enumeration)
 - ✅ CSRF guard integration tests (all mutation routes)
 - ✅ Redis rate-limit backend tests (atomic ops, timeouts, fail-closed)
-- ✅ Quality tooling tests (14 tests for hooks/staged checks)
+- ✅ Quality tooling tests (15 tests for hooks/staged checks)
+- ✅ OpenAPI route-contract test binding the spec to the handlers (Phase 6)
 - ✅ Integration tests for all critical paths
 
 ### Code Quality
-- ✅ **Lint: 0 errors, 0 warnings** across 129 files
-- ✅ **Complexity: 568 functions** at or below measured baseline
-- ✅ Shared API middleware and CSRF guard
+- ✅ **Lint: 0 errors, 0 warnings** across 135 files
+- ✅ **Complexity: 572 functions** at or below measured baseline
+- ✅ CSRF guard shared by every custom mutation route
 - ✅ Centralized constants
 - ✅ Removed dead code and types
 - ✅ JSDoc documentation
 - ✅ Architecture Decision Records
 - ✅ OpenAPI 3.0 specification
 - ✅ CI/CD with quality gates and complexity regression detection
-- ✅ Pre-commit hooks (tracked, opt-in via `pnpm hooks:install`)
+- ✅ Pre-commit hooks (tracked, wired by `prepare` via `core.hooksPath=.githooks`)
 
 ---
 
 ## Files Changed
 
 ### New Files Created (74 files)
-- `src/lib/api/middleware.ts` - Shared API middleware
+- `src/lib/api/middleware.ts` - Response/error helpers kept for the requireAuth
+  parity test; no route handler imports them (documented in Phase 6)
 - `src/lib/api/csrf.ts` - CSRF origin guard
 - `src/lib/constants.ts` - Application-wide constants
 - `src/lib/cache.ts` - Caching layer with TTL
@@ -298,11 +315,11 @@ Successfully completed comprehensive audit remediation for the OmniChat applicat
 - `.githooks/pre-commit` - Tracked pre-commit hook
 - `scripts/quality/check.mjs` - Quality runner (lint + complexity)
 - `scripts/quality/complexity-rule.mjs` - ESLint complexity rule
-- `scripts/quality/complexity-baseline.json` - 568-function baseline
+- `scripts/quality/complexity-baseline.json` - 572-function baseline
 - `scripts/quality/staged.mjs` - Staged snapshot checker
-- `scripts/quality/install-hooks.mjs` - Hook installer
-- `scripts/quality/quality.test.mjs` - 14 quality tooling tests
-- 19 test files with 823 tests
+- `scripts/quality/install-hooks.mjs` - Hook installer / hooksPath coexistence check
+- `scripts/quality/quality.test.mjs` - 15 quality tooling tests
+- 24 test files with 905 tests
 
 ### Files Modified (60+ files)
 - `src/lib/crypto/vault.ts` - PBKDF2 key derivation, v2 format
@@ -328,7 +345,11 @@ Successfully completed comprehensive audit remediation for the OmniChat applicat
 
 ---
 
-## Verification Evidence (measured September 25, 2026)
+## Verification Evidence (historical snapshot, measured September 25, 2026)
+
+> Superseded: this block records the Phase 4 gate output and is kept as the
+> measurement of its day. Current numbers are in the Executive Summary and the
+> Phase 6 section.
 
 ### Build Status
 ```bash
@@ -376,12 +397,12 @@ $ git log --oneline
 ### Statistics
 - **Files Changed**: 150+ files modified/created across all phases
 - **Lines Added**: ~10,500+ lines of production code
-- **Tests Added**: 873 tests (up from 0)
-- **Test Files**: 23 (up from 0)
+- **Tests Added**: 905 tests (up from 0)
+- **Test Files**: 24 (up from 0)
 - **Security**: All critical and high vulnerabilities resolved
 - **Performance**: 10x faster database queries
 - **Code Quality**: Lint 0/0, complexity 572 functions at baseline
-- **Commits**: 38 on `master`
+- **Commits**: 47 on `master` (46 before the Phase 6 documentation commit)
 
 ---
 
@@ -392,13 +413,14 @@ $ git log --oneline
 - ✅ **Email Verification**: Strict hosted policy, hashed tokens, atomic consumption
 - ✅ **CSRF Protection**: Origin validation on all 10 custom mutation routes
 - ✅ **Rate Limiting**: Distributed via Upstash REST Redis, fail-closed
-- ✅ **Testing**: 873 passing tests across 23 files
-- ✅ **Monitoring**: Health checks, metrics, tracing, alerting
-- ✅ **Documentation**: OpenAPI spec, ADRs, JSDoc comments
+- ✅ **Testing**: 905 passing tests across 24 files
+- ✅ **Monitoring**: Health checks, metrics (bearer-gated, reachable without a
+  session), tracing, alerting
+- ✅ **Documentation**: OpenAPI spec covering all 15 routes, ADRs, JSDoc comments
 - ✅ **Performance**: Optimized queries, caching, rate limiting
-- ✅ **Code Quality**: Lint 0/0, complexity 568 functions at baseline
+- ✅ **Code Quality**: Lint 0/0 across 135 files, complexity 572 functions at baseline
 - ✅ **Infrastructure**: CI/CD pipeline, Docker, deployment configs
-- ✅ **Pre-commit Hooks**: Tracked, opt-in via `pnpm hooks:install`
+- ✅ **Pre-commit Hooks**: Tracked, activated by `prepare` (`core.hooksPath`)
 - ✅ **Error Handling**: Graceful degradation, error boundaries
 - ✅ **Input Validation**: Zod schemas for all endpoints
 
@@ -410,16 +432,19 @@ $ git log --oneline
 1. **Email Verification**: Set `EMAIL_VERIFICATION_REQUIRED=true`, configure SMTP (Brevo free: `smtp-relay.brevo.com:587`)
 2. **Redis Rate Limiting**: Set `RATE_LIMIT_BACKEND=redis-rest`, configure `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `RATE_LIMIT_PREFIX`
 3. **CSRF**: Set `APP_ORIGIN` to canonical HTTPS origin (e.g., `https://app.example.com`)
-4. **Pre-commit Hooks**: Run `pnpm hooks:install` to activate locally
+4. **Metrics scraping**: Set `METRICS_TOKEN` and send `Authorization: Bearer <token>`;
+   `/api/metrics` no longer requires a session, so a scraper can reach it
+5. **Pre-commit Hooks**: Nothing to run — `pnpm install` executes `prepare`, which
+   sets `core.hooksPath=.githooks`; `pnpm hooks:install` only reports/installs the copy
 
 ### Optional Enhancements
 1. **E2E Tests**: Add Playwright tests for critical user flows
 2. **Load Tests**: Add k6 or Artillery tests for performance benchmarks
 3. **Coverage Reports**: Run `pnpm test -- --coverage` with @vitest/coverage-v8 (installed)
-4. **PostgreSQL Adapter**: Configure `@prisma/adapter-pg` for hosted PostgreSQL deployments
 
 ### Monitoring Integration
-1. **Prometheus/Grafana**: Scrape `/api/metrics` endpoint
+1. **Prometheus/Grafana**: Scrape `/api/metrics` with `Authorization: Bearer $METRICS_TOKEN`
+   (the path is exempt from the session middleware precisely so a scraper can reach it)
 2. **Jaeger/Zipkin**: Export spans from `src/lib/tracing.ts`
 3. **Slack/PagerDuty**: Register alert handlers from `src/lib/alerting.ts`
 
@@ -432,12 +457,12 @@ The OmniChat audit remediation has been **successfully completed**. The codebase
 - **Secure**: All critical vulnerabilities resolved, enterprise-grade encryption, email verification, CSRF protection, distributed rate limiting
 - **Performant**: Optimized queries, caching, rate limiting with Redis backend
 - **Observable**: Comprehensive metrics, tracing, and alerting
-- **Tested**: 873 passing tests across 23 files
+- **Tested**: 905 passing tests across 24 files
 - **Documented**: OpenAPI spec, ADRs, JSDoc comments
 - **Quality-Gated**: Lint 0/0, complexity baseline, CI pipeline, pre-commit hooks
 - **Production-Ready**: Clean build, deployment configs, environment-activated security
 
-**Total Effort**: 5 phases, 60+ tasks, 38 commits, 150+ files changed, ~10,500+ lines of code
+**Total Effort**: 6 phases, 60+ tasks, 47 commits, 150+ files changed, ~10,500+ lines of code
 
 **Final Outcome**: A professional, production-ready application with enterprise-grade security, performance, observability, and maintainability. All security features are environment-activated (no breaking changes to existing deployments).
 
@@ -493,20 +518,74 @@ finding was fixed in test-gated batches:
   meant CI never ran), Node 22 + pnpm 11.8, new `docker` job building both
   image targets and validating both compose stacks, advisory `pnpm audit`.
 - Dockerfile pins `corepack prepare pnpm@11.8.0` (reproducible builds).
-- Tauri hardening: bundle no longer ships `node_modules` into the installer;
-  renderer CSP `connect-src` narrowed to `'self'` (provider traffic is
-  server-side; keys never reach the renderer).
+- Tauri hardening: bundle no longer ships `node_modules` into the installer.
+  Its `csp` `connect-src 'self'` was described in the commit as narrowing the
+  renderer, but Phase 6 established that the desktop renderer is governed by the
+  header Next serves (src-tauri navigates the webview to http://localhost:3000),
+  so that value never applied to the document. Provider traffic is server-side
+  either way; keys never reach the renderer.
 
-**Verification (measured September 29, 2026)**: `tsc` clean · 873/873 tests
-· quality 134 files 0/0 · drift check 9+9 models no drift · production build
-compiled · both compose stacks validate · `/api/metrics` auth covered by 10
-new route tests · chat route covered by 44 fault-injection tests including
-abort/double-write/role-injection paths · store id-targeting covered by 5
-regression tests.
+**Verification (measured September 29, 2026 — superseded by Phase 6)**: `tsc`
+clean · 873/873 tests · quality 134 files 0/0 · drift check 9+9 models no drift ·
+production build compiled · both compose stacks validate · `/api/metrics` auth
+covered by 10 new route tests · chat route covered by 44 fault-injection tests
+including abort/double-write/role-injection paths · store id-targeting covered
+by 5 regression tests.
 
 ---
 
-*Updated September 29, 2026*
+## Phase 6: Documentation Truth and API-Contract Remediation (COMPLETE, September 30, 2026)
+
+Reading every project document end to end, then verifying each claim against
+source, found the documentation was the least trustworthy artifact in the repo -
+and that four of its inaccuracies were concealing real defects.
+
+### Code defects found behind stale docs
+
+| Commit | Defect | Fix |
+|---|---|---|
+| `5562888` | `/api/metrics` was unreachable by any scraper: the root middleware exempted only `/api/health`, so the endpoint demanded a session cookie *before* its bearer check could run | `api/metrics$` added to the matcher's negative lookahead (anchored, so `/api/metrics-admin` and friends stay protected). Accepted trade-off: outside production with `METRICS_TOKEN` unset it is sessionless-readable; production remains fail-closed 404 |
+| `37998bb` | `pnpm hooks:install` threw on every fresh install, because `prepare` always sets `core.hooksPath=.githooks` and the installer refused any custom hooks directory | Idempotent: when the resolved target already IS the tracked hook, report it and return. The refusal is kept for a genuinely foreign directory. Stale header comment in `.githooks/pre-commit` corrected |
+| `c537caa` | Nothing pinned pnpm locally while CI and Docker pin 11.8.0 | `"packageManager": "pnpm@11.8.0"`; verified with corepack absent that install and the gate still run |
+| `be0936a` | `.env.example` omitted three variables the code reads | `METRICS_TOKEN`, `NEXTAUTH_SECRET` (legacy fallback), `SMTP_TEST_ALLOW_INSECURE` documented with their fail-closed behavior |
+
+### Documentation corrections
+- `src/lib/api/middleware.ts` (`2d3db89`): its header advertised shared
+  middleware no route uses. Grep confirms the only importer is
+  `config.test.ts`, for `requireAuth`. Kept rather than deleted, because
+  deleting it means deleting a security parity assertion.
+- `public/openapi.json` (`aaf5d6b`): rebuilt from 7 documented paths to the
+  real 15, with the four wrong response shapes corrected (`{keys}` not
+  `{apiKeys}`, `{preferences}`, the projects-only `{data:...}` envelope, POST
+  `/api-keys` answering 200), the `degraded` health tier allowed on 503, and
+  the per-route 401/403/413/415/429/503 behaviors documented.
+- New `src/test/openapi-contract.test.ts` binds the document to the code: served
+  paths and exported methods are walked out of `src/app/api`, and five request
+  schemas are compared field-by-field with their Zod objects. It failed twice
+  against genuine mismatches while being written, which is the evidence it works.
+
+### Claims retracted
+- The Tauri/Next CSP divergence flagged at the start of this phase is **not** a
+  defect - `tauri.conf.json` navigates the webview to a Next-served origin, so
+  Next's header governs and the `ipc:` allowance is simply unused today.
+- `@prisma/adapter-pg` was still listed as optional future work although it
+  shipped in `099864d`; the line is removed.
+- This file's own self-contradiction (873/23/134/572 against 823/19/129/568) is
+  resolved: the September 25 block is labelled a historical snapshot, and only
+  the Executive Summary and this section state current numbers.
+
+**Verification (measured September 30, 2026, on `master`)**: `tsc` clean ·
+**905 tests passing across 24 files** · quality **135 files, 0 errors,
+0 warnings**, **572 functions** at baseline · 15 quality tooling tests ·
+production build compiled (the type-check phase needed
+`NODE_OPTIONS=--max-old-space-size=8192` under the local memory ceiling) ·
+47 commits after this one, clean working tree, 41 ahead of `origin/master`.
+
+**Still not done by design**: pushing and deploying remain owner decisions.
+
+---
+
+*Updated September 30, 2026 (Phase 6)*
 *Branch: master*
-*Commits: 38*
-*Tests: 873 passing*
+*Commits: 47 including this one*
+*Tests: 905 passing across 24 files*
