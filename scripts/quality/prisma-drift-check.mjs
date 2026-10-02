@@ -9,6 +9,8 @@
  * - Same field names per model
  * - Same field types (with provider-specific mapping)
  * - Same relation fields
+ * - Same declared indexes/uniques in both schemas
+ * - Every SQLite index actually created by prisma/sqlite-init.sql
  *
  * Exit code 0 = no drift, 1 = drift detected.
  */
@@ -134,6 +136,53 @@ function checkDrift(pgModels, sqliteModels) {
   return issues;
 }
 
+/**
+ * Prisma schema names its indexes deterministically: <table>_<columns>_idx for
+ * @@index and _key for @@unique, where <table> is the @@map value. Two artifacts
+ * are produced from those declarations and both used to drift silently: the
+ * second schema, and prisma/sqlite-init.sql (what `pnpm db:init` actually runs).
+ */
+function parseIndexNames(schema) {
+  const names = new Set();
+  const modelRegex = /model\s+(\w+)\s*\{([^}]*(?:\{[^}]*\}[^}]*)*)\}/g;
+  let match;
+
+  while ((match = modelRegex.exec(schema)) !== null) {
+    const body = match[2];
+    const mapped = body.match(/@@map\("([^"]+)"\)/);
+    const table = mapped ? mapped[1] : match[1];
+
+    for (const line of body.split("\n")) {
+      const index = line.match(/@@(index|unique)\(\[([^\]]+)\]/);
+      if (!index) continue;
+      const columns = index[2].split(",").map((part) => part.trim().split(/\s+/)[0]);
+      names.add(`${table}_${columns.join("_")}_${index[1] === "index" ? "idx" : "key"}`);
+    }
+  }
+
+  return names;
+}
+
+function checkIndexDrift(pgSchema, sqliteSchema, initSql) {
+  const issues = [];
+  const pgNames = parseIndexNames(pgSchema);
+  const sqliteNames = parseIndexNames(sqliteSchema);
+
+  for (const name of pgNames) {
+    if (!sqliteNames.has(name)) issues.push(`MISSING INDEX: "${name}" declared only in the PostgreSQL schema`);
+  }
+  for (const name of sqliteNames) {
+    if (!pgNames.has(name)) issues.push(`MISSING INDEX: "${name}" declared only in the SQLite schema`);
+  }
+
+  const created = new Set([...initSql.matchAll(/CREATE (?:UNIQUE )?INDEX "([^"]+)"/g)].map((m) => m[1]));
+  for (const name of sqliteNames) {
+    if (!created.has(name)) issues.push(`INIT SQL DRIFT: "${name}" is declared in the schema but not created by prisma/sqlite-init.sql`);
+  }
+
+  return { issues, count: sqliteNames.size };
+}
+
 async function main() {
   const pgSchema = await readFile(resolve(root, "prisma/schema.prisma"), "utf8");
   const sqliteSchema = await readFile(resolve(root, "prisma/schema.sqlite.prisma"), "utf8");
@@ -147,9 +196,11 @@ async function main() {
   console.log(`Prisma drift check: ${pgCount} PostgreSQL models, ${sqliteCount} SQLite models`);
 
   const issues = checkDrift(pgModels, sqliteModels);
+  const indexCheck = checkIndexDrift(pgSchema, sqliteSchema, await readFile(resolve(root, "prisma/sqlite-init.sql"), "utf8"));
+  issues.push(...indexCheck.issues);
 
   if (issues.length === 0) {
-    console.log("✓ No drift detected — schemas are consistent.");
+    console.log(`✓ No drift detected — schemas are consistent (${indexCheck.count} indexes, init SQL covered).`);
     return;
   }
 
@@ -157,7 +208,7 @@ async function main() {
   for (const issue of issues) {
     console.error(`  • ${issue}`);
   }
-  console.error("\nFix: ensure both prisma/schema.prisma and prisma/schema.sqlite.prisma define the same models and fields.");
+  console.error("\nFix: align prisma/schema.prisma, prisma/schema.sqlite.prisma and prisma/sqlite-init.sql (regenerate the latter with `pnpm db:init`).");
   process.exitCode = 1;
 }
 

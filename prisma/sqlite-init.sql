@@ -155,3 +155,6 @@ CREATE UNIQUE INDEX "projects_userId_name_key" ON "projects"("userId", "name");
 
 -- CreateIndex
 CREATE INDEX "messages_conversationId_idx" ON "messages"("conversationId");
+
+-- CreateIndex
+CREATE INDEX "messages_conversationId_createdAt_idx" ON "messages"("conversationId", "createdAt");
