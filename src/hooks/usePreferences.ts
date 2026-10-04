@@ -4,7 +4,9 @@ import { useJsonResource } from "./useJsonResource";
 import type { UserPreference } from "@/types";
 
 export function usePreferences() {
-    const { data, loading, error, refresh, setData } = useJsonResource<{ preferences: UserPreference }>(
+    // null is the documented response for an account that has never saved, not a
+    // failure - callers must render defaults rather than an error.
+    const { data, loading, error, refresh, setData } = useJsonResource<{ preferences: UserPreference | null }>(
         "/api/preferences", "Failed to fetch preferences"
     );
 

@@ -8,6 +8,26 @@
 // drifted silently and was deleted rather than kept as decoration.
 
 // ────────────────────────────────────────────────────────────────
+// Preferences
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * Applied by the server when a user saves preferences for the first time, and
+ * used by the client to render the form for an account that has never saved
+ * (GET /api/preferences legitimately returns { preferences: null } then).
+ * Shared so the two can never disagree; lives here rather than in the query
+ * module because the query module imports Prisma and must not reach a bundle.
+ */
+export const DEFAULT_USER_PREFERENCES = {
+    defaultProviderId: "openai",
+    defaultModelId: "gpt-4o",
+    defaultSystemPrompt: "You are a helpful assistant.",
+    theme: "dark",
+    sendWithEnter: true,
+    showTokenCount: false,
+} as const;
+
+// ────────────────────────────────────────────────────────────────
 // Rate Limiting
 // ────────────────────────────────────────────────────────────────
 

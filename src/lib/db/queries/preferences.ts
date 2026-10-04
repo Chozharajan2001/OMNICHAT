@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db/prisma";
+import { DEFAULT_USER_PREFERENCES } from "@/lib/constants";
 import type { UserPreference } from "@prisma/client";
 
 /**
@@ -28,13 +29,14 @@ export async function upsertPreferences(
         create: {
             userId,
             ...data,
-            // Sensible defaults for the initial create (if not provided)
-            defaultProviderId: data.defaultProviderId ?? "openai",
-            defaultModelId: data.defaultModelId ?? "gpt-4o",
-            defaultSystemPrompt: data.defaultSystemPrompt ?? "You are a helpful assistant.",
-            theme: data.theme ?? "dark",
-            sendWithEnter: data.sendWithEnter ?? true,
-            showTokenCount: data.showTokenCount ?? false,
+            // Shared with the client so an account that has never saved renders
+            // exactly what the first save will store.
+            defaultProviderId: data.defaultProviderId ?? DEFAULT_USER_PREFERENCES.defaultProviderId,
+            defaultModelId: data.defaultModelId ?? DEFAULT_USER_PREFERENCES.defaultModelId,
+            defaultSystemPrompt: data.defaultSystemPrompt ?? DEFAULT_USER_PREFERENCES.defaultSystemPrompt,
+            theme: data.theme ?? DEFAULT_USER_PREFERENCES.theme,
+            sendWithEnter: data.sendWithEnter ?? DEFAULT_USER_PREFERENCES.sendWithEnter,
+            showTokenCount: data.showTokenCount ?? DEFAULT_USER_PREFERENCES.showTokenCount,
         },
         update: data,
     });

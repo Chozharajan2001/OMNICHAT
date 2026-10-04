@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { usePreferences } from "@/hooks/usePreferences";
+import { DEFAULT_USER_PREFERENCES } from "@/lib/constants";
+import type { UserPreference } from "@/types";
 import {
     type AppLanguage,
     usePersonalizationStore,
@@ -28,14 +30,27 @@ export default function PreferencesPage() {
     if (loading) {
         return <p className="text-sm text-muted-foreground">Loading preferences...</p>;
     }
-    if (error || !preferences) {
-        return <p className="text-sm text-destructive">Error: {error || "Preferences unavailable"}</p>;
+    if (error) {
+        return <p className="text-sm text-destructive">Error: {error}</p>;
     }
-    return <PreferencesForm initialPreferences={preferences} updatePreferences={updatePreferences} />;
+    // A new account legitimately has no preferences row yet (GET returns
+    // { preferences: null }). That is not an error: rendering the defaults is the
+    // only way to reach the first save, which creates the row.
+    return (
+        <PreferencesForm
+            initialPreferences={preferences ?? DEFAULT_USER_PREFERENCES}
+            updatePreferences={updatePreferences}
+        />
+    );
 }
 
+type PreferenceValues = Pick<
+    UserPreference,
+    "defaultProviderId" | "defaultModelId" | "defaultSystemPrompt" | "theme" | "sendWithEnter" | "showTokenCount"
+>;
+
 function PreferencesForm({ initialPreferences, updatePreferences }: {
-    initialPreferences: NonNullable<ReturnType<typeof usePreferences>["preferences"]>;
+    initialPreferences: PreferenceValues;
     updatePreferences: ReturnType<typeof usePreferences>["updatePreferences"];
 }) {
     const {
