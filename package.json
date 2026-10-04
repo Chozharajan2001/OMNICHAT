@@ -22,6 +22,7 @@
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:drift-check": "node scripts/quality/prisma-drift-check.mjs",
+    "users:add": "node scripts/users/add-user.mjs",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",

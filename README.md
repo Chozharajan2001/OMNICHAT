@@ -183,12 +183,19 @@ it completes successfully. There is no runtime entrypoint.
 
 **First account on a fresh deployment:** automatic account creation on sign-in is
 deliberately limited to development and desktop mode (`canAutoCreateAccount()` in
-`src/lib/auth/email-policy.ts`). With `NODE_ENV=production` and
-`EMAIL_VERIFICATION_REQUIRED` unset, the register endpoint answers 404 and the
-login form creates nothing, so no one can sign in until either email
-verification is configured (SMTP vars, then register → verify → sign in) or a
-row is inserted directly. A bootstrap command for the operator's first account is
-an open item — until it exists, plan one of those two paths for a new host.
+`src/lib/auth/email-policy.ts`), and with `EMAIL_VERIFICATION_REQUIRED` unset the
+register endpoint answers 404. So create the operator account explicitly:
+
+```bash
+pnpm users:add --email you@example.com          # password read from stdin
+# inside a container: docker compose run --rm migrate node scripts/users/add-user.mjs --email you@example.com
+```
+
+`--force` resets an existing password, `--verified` stamps `emailVerified` for
+hosts without SMTP (required to sign in when `EMAIL_VERIFICATION_REQUIRED=true`).
+The password is never accepted as a flag — argv leaks into shell history and the
+process table. Alternatively enable email verification (SMTP vars) and register
+through the UI.
 
 `/api/metrics` is token-protected: set `METRICS_TOKEN` to allow Prometheus
 scrapes via `Authorization: Bearer <token>`; in production an unset token
