@@ -12,6 +12,9 @@ services:
       context: .
       dockerfile: Dockerfile
       target: migrate
+      # Same build args as the app service, so the two share cached layers.
+      args:
+        DATABASE_URL: file:./build-only.db
     restart: "no"
     environment:
       DATABASE_URL: file:/app/data/omnichat.db
@@ -23,6 +26,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # Explicit: without a target Docker builds the LAST stage, and a stray
+      # migration stage there made this service run `prisma db push` forever.
+      target: runner
+      # Generate the client from the SQLite schema for this stack.
+      args:
+        DATABASE_URL: file:./build-only.db
     restart: unless-stopped
     ports:
       - "${APP_PORT:-3000}:3000"

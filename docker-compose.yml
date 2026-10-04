@@ -36,6 +36,9 @@ services:
       context: .
       dockerfile: Dockerfile
       target: migrate
+      # Same build args as the app service, so the two share cached layers.
+      args:
+        DATABASE_URL: postgresql://build-only:build-only@localhost:5432/omnichat
     restart: "no"
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
@@ -50,6 +53,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # Explicit: without a target Docker builds the LAST stage, and a stray
+      # migration stage there made this service run `prisma db push` forever.
+      target: runner
+      # Provider the baked Prisma client is generated for (no credentials are
+      # used at build time; only the URL scheme selects the schema).
+      args:
+        DATABASE_URL: postgresql://build-only:build-only@localhost:5432/omnichat
     restart: unless-stopped
     ports:
       - "${APP_PORT:-3000}:3000"

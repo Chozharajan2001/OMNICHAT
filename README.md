@@ -202,3 +202,13 @@ scrapes via `Authorization: Bearer <token>`; in production an unset token
 makes the endpoint respond 404. The path is exempt from the session guard
 (`src/proxy.ts`) precisely so that a scraper can reach it - the bearer token
 is its only gate.
+
+Publish the real origin. Both compose stacks default `NEXTAUTH_URL` to
+`http://localhost:3000`, so on any other host set `NEXTAUTH_URL` (and
+`APP_ORIGIN`, which the CSRF guard requires) to the public URL — verified on a
+container reached on port 3100, where sign-in still redirected to
+`http://localhost:3000` because of that default.
+
+The Postgres and SQLite stacks pass a build-time `DATABASE_URL` argument because
+`prisma.config.ts` selects the schema from that value at `prisma generate` time;
+a generated client must match the adapter the container uses at runtime.
