@@ -120,7 +120,7 @@ Pre-commit hook runs staged quality checks automatically after `pnpm install`.
 - Credentials and OAuth sign-in (Google, GitHub)
 - Email verification (opt-in for hosted deployments)
 - API key management with AES-256-GCM + PBKDF2 encryption
-- 8 AI providers (OpenAI, Anthropic, Google, Groq, Mistral, DeepSeek, Perplexity, xAI)
+- 9 AI providers (OpenAI, Anthropic, Google AI, Mistral, Groq, xAI, DeepSeek, Perplexity, NVIDIA NIM)
 - Streaming chat responses with token usage tracking
 - Conversation history, projects, and sidebar navigation
 - Model selection by provider with temperature/token controls

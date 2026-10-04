@@ -6,10 +6,10 @@ Successfully completed comprehensive audit remediation for the OmniChat applicat
 
 **Final Status (measured September 30, 2026, on `master` at the Phase 6 commit — see
 the Phase 6 section for what changed after Phase 5):**
-- ✅ **907 tests passing** across 24 test files (up from 0)
+- ✅ **935 tests passing** across 26 test files (up from 0)
 - ✅ **Clean production build** with no TypeScript errors
-- ✅ **Lint: 0 errors, 0 warnings** across 135 files
-- ✅ **Complexity: 572 functions** at or below measured baseline
+- ✅ **Lint: 0 errors, 0 warnings** across 138 files
+- ✅ **Complexity: 573 functions** at or below measured baseline
 - ✅ **All critical and high security vulnerabilities resolved**
 - ✅ **Professional observability stack** (metrics with token-gated endpoint, tracing, alerting)
 - ✅ **Enterprise-grade encryption** with PBKDF2 key derivation
@@ -197,7 +197,7 @@ the Phase 6 section for what changed after Phase 5):**
 - **Brute Force Resistance**: Computationally expensive key derivation
 
 ### 4.5 Polish
-- **Lint**: 0 errors, 0 warnings across 135 files (was 20 problems)
+- **Lint**: 0 errors, 0 warnings across 138 files (was 20 problems)
   - Fixed React hooks (useJsonResource, usePreferences, useApiKeys)
   - Removed unused imports across settings pages and components
   - Replaced HTML anchor with Next.js Link
@@ -255,7 +255,7 @@ the Phase 6 section for what changed after Phase 5):**
 - ✅ Health check endpoints
 
 ### Testing
-- ✅ **907 passing tests** across 24 test files (up from 0)
+- ✅ **935 passing tests** across 26 test files (up from 0)
 - ✅ Comprehensive vault edge case tests (51 tests)
 - ✅ Fault injection tests for chat routes (44 tests)
 - ✅ Email verification tests (replay, expiry, concurrency, enumeration)
@@ -266,8 +266,8 @@ the Phase 6 section for what changed after Phase 5):**
 - ✅ Integration tests for all critical paths
 
 ### Code Quality
-- ✅ **Lint: 0 errors, 0 warnings** across 135 files
-- ✅ **Complexity: 572 functions** at or below measured baseline
+- ✅ **Lint: 0 errors, 0 warnings** across 138 files
+- ✅ **Complexity: 573 functions** at or below measured baseline
 - ✅ CSRF guard shared by every custom mutation route
 - ✅ Centralized constants
 - ✅ Removed dead code and types
@@ -319,7 +319,7 @@ the Phase 6 section for what changed after Phase 5):**
 - `scripts/quality/staged.mjs` - Staged snapshot checker
 - `scripts/quality/install-hooks.mjs` - Hook installer / hooksPath coexistence check
 - `scripts/quality/quality.test.mjs` - 15 quality tooling tests
-- 24 test files with 907 tests
+- 26 test files with 935 tests
 
 ### Files Modified (60+ files)
 - `src/lib/crypto/vault.ts` - PBKDF2 key derivation, v2 format
@@ -398,12 +398,12 @@ $ git log --oneline
 ### Statistics
 - **Files Changed**: 150+ files modified/created across all phases
 - **Lines Added**: ~10,500+ lines of production code
-- **Tests Added**: 907 tests (up from 0)
+- **Tests Added**: 935 tests (up from 0)
 - **Test Files**: 24 (up from 0)
 - **Security**: All critical and high vulnerabilities resolved
 - **Performance**: 10x faster database queries
-- **Code Quality**: Lint 0/0, complexity 572 functions at baseline
-- **Commits**: 48 on `master` (through the guard fix)
+- **Code Quality**: Lint 0/0, complexity 573 functions at baseline
+- **Commits**: 56 on `master` (through the Phase 7 docs commit)
 
 ---
 
@@ -414,12 +414,12 @@ $ git log --oneline
 - ✅ **Email Verification**: Strict hosted policy, hashed tokens, atomic consumption
 - ✅ **CSRF Protection**: Origin validation on all 10 custom mutation routes
 - ✅ **Rate Limiting**: Distributed via Upstash REST Redis, fail-closed
-- ✅ **Testing**: 907 passing tests across 24 files
+- ✅ **Testing**: 935 passing tests across 26 files
 - ✅ **Monitoring**: Health checks, metrics (bearer-gated, reachable without a
   session), tracing, alerting
 - ✅ **Documentation**: OpenAPI spec covering all 15 routes, ADRs, JSDoc comments
 - ✅ **Performance**: Optimized queries, caching, rate limiting
-- ✅ **Code Quality**: Lint 0/0 across 135 files, complexity 572 functions at baseline
+- ✅ **Code Quality**: Lint 0/0 across 138 files, complexity 573 functions at baseline
 - ✅ **Infrastructure**: CI/CD pipeline, Docker, deployment configs
 - ✅ **Pre-commit Hooks**: Tracked, activated by `prepare` (`core.hooksPath`)
 - ✅ **Error Handling**: Graceful degradation, error boundaries
@@ -458,12 +458,12 @@ The OmniChat audit remediation has been **successfully completed**. The codebase
 - **Secure**: All critical vulnerabilities resolved, enterprise-grade encryption, email verification, CSRF protection, distributed rate limiting
 - **Performant**: Optimized queries, caching, rate limiting with Redis backend
 - **Observable**: Comprehensive metrics, tracing, and alerting
-- **Tested**: 907 passing tests across 24 files
+- **Tested**: 935 passing tests across 26 files
 - **Documented**: OpenAPI spec, ADRs, JSDoc comments
 - **Quality-Gated**: Lint 0/0, complexity baseline, CI pipeline, pre-commit hooks
 - **Production-Ready**: Clean build, deployment configs, environment-activated security
 
-**Total Effort**: 6 phases, 60+ tasks, 48 commits, 150+ files changed, ~10,500+ lines of code
+**Total Effort**: 7 phases, 60+ tasks, 56 commits, 150+ files changed, ~10,500+ lines of code
 
 **Final Outcome**: A professional, production-ready application with enterprise-grade security, performance, observability, and maintainability. All security features are environment-activated (no breaking changes to existing deployments).
 
@@ -576,7 +576,7 @@ and that four of its inaccuracies were concealing real defects.
   resolved: the September 25 block is labelled a historical snapshot, and only
   the Executive Summary and this section state current numbers.
 
-**Verification (measured September 30, 2026, on `master`)**: `tsc` clean ·
+**Phase 6 verification (measured September 30, 2026; superseded by Phase 7)**: `tsc` clean ·
 **907 tests passing across 24 files** · quality **135 files, 0 errors,
 0 warnings**, **572 functions** at baseline · 15 quality tooling tests ·
 production build compiled (the type-check phase needed
@@ -601,7 +601,63 @@ code, and one of them overturned a premise I had written down:
 
 ---
 
-*Updated September 30, 2026 (Phase 6)*
+## Phase 7: Deployment, UI and First-Run Verification (COMPLETE, October 4, 2026)
+
+Everything above was verified by reading and by tests. This phase ran the thing:
+containers, HTTP, and a real browser. Four defects fell out, all fixed; the ones
+that only execution can show.
+
+| Commit | What execution exposed |
+|---|---|
+| `9230786` | **A fresh production host had no way in.** Auto-creation is dev/desktop-only and `/api/auth/register` 404s without verification enabled, so the first sign-in returned `CredentialsSignin` and created no user. Added `pnpm users:add` (stdin/`--password-file`, never argv; `--force` to reset, `--verified` for SMTP-less hosts), with the password rule pinned against `email-policy.ts` over a shared case table so the JS/TS copies cannot drift |
+| `7e80d85` | `prepare` ran `git config …` unconditionally, so every image build died with `sh: git: not found`. Now `scripts/quality/link-hooks.mjs` sets the same `core.hooksPath` only when a repository exists |
+| `fad7f6c` | `ERR_PNPM_LOCKFILE_CONFIG_MISMATCH`: `.pnpmfile.cjs` was stored LF but checked out CRLF, so its recorded checksum could never match across platforms and `--frozen-lockfile` refused to install. The hook was a no-op (approval really lives in `pnpm-workspace.yaml`), so it is gone. Note honestly: `7e80d85` deleted the file without regenerating the lockfile, so that one commit was not independently installable; this commit restored the pair rather than rewriting history |
+| `2f12523` | **The deployed app answered 500 on every route.** (a) `migrate` was the last Dockerfile stage and the app service pinned no `target`, so the *app image was the migration job* and crash-looped on `prisma db push`; (b) the baked Prisma client came from the SQLite schema while the runtime chose `PrismaPg`, because `prisma.config.ts` picks the schema from `DATABASE_URL` at generate time and the build set none. Runner is now last, both stacks pin `target: runner`, and a build ARG supplies the provider. Also copied `link-hooks.mjs` into the deps stage, which had then failed with `MODULE_NOT_FOUND` |
+| `2991667` | **Settings > General was a dead end for every new account.** The page folded the legitimate `{ preferences: null }` into its error branch and rendered "Error: Preferences unavailable" — hiding the only form that could create the row. It now renders shared defaults, which the server's first-save path reads from the same constant. Guard mutation-checked |
+
+Deployed-stack evidence (PostgreSQL compose, published on 3210 — 3100 is held by
+an unrelated local app, whose 404 page was briefly mistaken for ours before the
+port was pinned): `/api/health` 200 healthy; `/chat` and unknown paths 302 to
+`/login`; `/api/providers` 401 anonymous; `/api/metrics` 404 with no token, 404
+for a wrong bearer, 200 for the right one; `users:add` run inside the migrate
+container; credentials sign-in then 302 with a session and `/chat` 200.
+`POST /api/chat` 403 while `NEXTAUTH_URL` still named `localhost:3000` — the
+CSRF guard working, and the reason the README now states the origin requirement.
+
+Browser pass (dev server, real clicks): login → `/chat` shell with sidebar,
+search, projects and empty states; composer disabled while empty; sending with no
+stored key produced an Error alert carrying the server's message text, with the
+user turn still visible; the providers screen rendered 9 cards and "0 connected".
+Chat error paths at HTTP level: last-message-not-user → 400 with that text; no
+stored key → 400; and against a **real provider rejection** (OpenAI answered 401
+`invalid_api_key`) the user message was persisted with no assistant row — the
+durability contract holding under a genuine failure.
+
+Still open, recorded rather than fixed:
+
+1. The login page, unauthenticated, calls `GET /api/preferences` and takes a 401
+   from the guard — console noise, no user impact observed.
+2. `useChat` logs a chat failure twice (hook and caller).
+3. A provider failing after the stream starts returns 200 with an empty body;
+   what the UI then shows was not verified (needs a live key).
+4. Live token streaming, stop-mid-stream and token counts with a real key:
+   still unverified — no key available here.
+5. Desktop installers never built; note the guard now requires sign-in there.
+6. `pnpm build` on a clean Windows tree fails tracing pruned `@libsql` platform
+   binaries (Next 16.1.6). Pre-existing: reproduced with the pnpmfile restored.
+   Docker/CI builds are unaffected, and are what verified these commits.
+
+**Phase 7 verification (measured October 4, 2026)**: `tsc` clean · **935 tests
+across 26 files** · quality **138 files, 0 errors, 0 warnings**, **573
+functions** · 17/17 quality tooling tests · Prisma drift green (11 indexes, init
+SQL covered) · both compose files validate · both images build with standalone
+output, exit 0 · 56 commits, clean tree, 50 ahead of `origin/master`.
+
+**Push and deploy remain owner decisions.**
+
+---
+
+*Updated October 4, 2026 (Phase 7)*
 *Branch: master*
-*Commits: 48 including this one*
-*Tests: 907 passing across 24 files*
+*Commits: 56 including this one*
+*Tests: 935 passing across 26 files*
