@@ -13,7 +13,6 @@ import {
     createConversation,
     deleteAllConversations,
 } from "@/lib/db/queries/conversations";
-import { getPreferences } from "@/lib/db/queries/preferences";
 import { createConversationSchema } from "@/lib/validators/schemas";
 import { ZodError } from "zod";
 import { MIN_PAGE_SIZE, MAX_PAGE_SIZE, DEFAULT_PAGE_SIZE } from "@/lib/constants";
@@ -68,18 +67,16 @@ export async function POST(req: Request) {
         }
 
         const body = await req.json();
+        // createConversationSchema requires providerId/modelId, so there is no
+        // preferences fallback to apply here (it was unreachable, and cost a
+        // query per create).
         const { title, providerId, modelId, projectId, folderId } =
             createConversationSchema.parse(body);
 
-        // Use user preferences as defaults if not provided
-        const preferences = await getPreferences(session.user.id);
-        const effectiveProviderId = providerId ?? preferences?.defaultProviderId ?? "openai";
-        const effectiveModelId = modelId ?? preferences?.defaultModelId ?? "gpt-4o";
-
         const conversation = await createConversation(
             session.user.id,
-            effectiveProviderId,
-            effectiveModelId,
+            providerId,
+            modelId,
             { title, projectId, folderId }
         );
 

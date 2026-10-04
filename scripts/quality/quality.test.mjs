@@ -5,6 +5,7 @@ import { createComplexityRule } from "./complexity-rule.mjs";
 import { validateBaseline, projectRoot } from "./check.mjs";
 import { checkStaged, git } from "./staged.mjs";
 import { installHook } from "./install-hooks.mjs";
+import { linkHooks } from "./link-hooks.mjs";
 import { mkdir, mkdtemp, readFile, writeFile, rm, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
@@ -134,6 +135,20 @@ test("empty index succeeds without attempting to load configuration", async (t) 
   // This is an isolated fixture index, never the user's repository.
   git(root, ["read-tree", "--empty"]);
   assert.equal(await unchangedIndex(root, () => checkStaged({ root })), true);
+});
+
+test("prepare links the tracked hooks directory when a repository exists", async (t) => {
+  const { root, put } = await fixture(t);
+  await put(".githooks/pre-commit", await readFile(join(projectRoot, ".githooks/pre-commit"), "utf8"));
+  assert.equal(linkHooks(root), ".githooks");
+  assert.equal(git(root, ["config", "--get", "core.hooksPath"]).trim(), ".githooks");
+});
+
+test("prepare stays silent where there is no repository, as in a container build", async (t) => {
+  const absent = await mkdtemp(join(projectRoot, ".next/quality test-"));
+  t.after(() => rm(absent, { recursive: true, force: true }));
+  // No .git and no git binary assumed: must return null rather than fail install.
+  assert.equal(linkHooks(absent), null);
 });
 
 test("installer preserves Git config, normalizes line endings, and never overwrites hooks", async (t) => {

@@ -4,7 +4,7 @@
   "private": true,
   "packageManager": "pnpm@11.8.0",
   "scripts": {
-    "prepare": "git config core.hooksPath .githooks",
+    "prepare": "node scripts/quality/link-hooks.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
