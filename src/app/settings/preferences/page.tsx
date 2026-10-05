@@ -142,7 +142,7 @@ function PreferencesForm({ initialPreferences, updatePreferences }: {
                 <Button
                     onClick={handleSave}
                     disabled={isSaving}
-                    className="rounded-full px-5 shadow-[0_16px_30px_rgba(124,109,255,0.22)]"
+                    className="rounded-full px-5 shadow-[0_16px_30px_var(--shadow-primary)]"
                 >
                     <Save className="h-4 w-4" />
                     {isSaving ? "Saving..." : "Save preferences"}

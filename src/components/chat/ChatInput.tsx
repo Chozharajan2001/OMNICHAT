@@ -82,7 +82,7 @@ export function ChatInput({
                             type="submit"
                             disabled={!value.trim() || disabled}
                             aria-label="Send message"
-                            className="h-12 w-full shrink-0 rounded-2xl shadow-[0_16px_30px_rgba(124,109,255,0.24)] sm:mt-auto sm:h-14 sm:w-14 sm:rounded-full"
+                            className="h-12 w-full shrink-0 rounded-2xl shadow-[0_16px_30px_var(--shadow-primary)] sm:mt-auto sm:h-14 sm:w-14 sm:rounded-full"
                         >
                             <Send className="h-4 w-4" />
                         </Button>

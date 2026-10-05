@@ -283,7 +283,7 @@ export function ConversationSidebar() {
             >
                 <div className="flex h-20 items-center justify-between border-b border-[var(--sidebar-border)] px-4">
                     <Link href="/chat" className="flex items-center gap-3" onClick={closeMobileSidebar}>
-                        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/18 text-primary shadow-[0_0_40px_rgba(124,109,255,0.25)]">
+                        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/18 text-primary shadow-[0_0_40px_var(--shadow-primary)]">
                             <Sparkles className="h-5 w-5" />
                         </div>
                         <div className="space-y-0.5">
@@ -314,7 +314,7 @@ export function ConversationSidebar() {
                 <div className="space-y-3 p-3">
                     <Button
                         onClick={handleNewChat}
-                        className="w-full justify-start gap-2 rounded-2xl border-0 bg-primary py-6 text-primary-foreground shadow-[0_16px_40px_rgba(124,109,255,0.22)]"
+                        className="w-full justify-start gap-2 rounded-2xl border-0 bg-primary py-6 text-primary-foreground shadow-[0_16px_40px_var(--shadow-primary)]"
                     >
                         <Plus className="h-4 w-4" />
                         New Conversation

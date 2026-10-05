@@ -71,7 +71,7 @@ export function ProjectList({
                         >
                             <span
                                 className="mr-2 h-2.5 w-2.5 rounded-full"
-                                style={{ backgroundColor: project.color || "#7c6dff" }}
+                                style={{ backgroundColor: project.color || "var(--primary)" }}
                             />
                             <span className="truncate">{project.name}</span>
                             <span className="ml-2 text-xs text-muted-foreground">

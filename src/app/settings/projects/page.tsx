@@ -122,7 +122,7 @@ export default function ProjectsSettingsPage() {
                                     <div className="flex items-center gap-2 font-medium">
                                         <span
                                             className="h-2.5 w-2.5 rounded-full"
-                                            style={{ backgroundColor: project.color || "#7c6dff" }}
+                                            style={{ backgroundColor: project.color || "var(--primary)" }}
                                         />
                                         <span className="truncate">{project.name}</span>
                                     </div>
