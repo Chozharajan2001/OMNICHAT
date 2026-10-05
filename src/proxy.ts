@@ -23,6 +23,11 @@ export const config = {
         // Public outside the auth namespace: the readiness probe, and the exact
         // metrics path — a Prometheus scraper has no session, so /api/metrics is
         // gated solely by its own METRICS bearer token (fail-closed 404).
-        "/((?!_next/static|_next/image|favicon.ico|api/auth(?:/|$)|api/health$|api/metrics$|icons).*)",
+        //
+        // The metadata routes are public by necessity: a link-preview crawler,
+        // an install prompt reading the manifest, or a crawler checking
+        // robots.txt has no session, and every one of those assets carries no
+        // user data.
+        "/((?!_next/static|_next/image|favicon.ico|icon\\.svg$|apple-icon\\.png$|og\\.png$|robots\\.txt$|manifest\\.webmanifest$|icons|api/auth(?:/|$)|api/health$|api/metrics$).*)",
     ],
 };

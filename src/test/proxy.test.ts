@@ -54,6 +54,23 @@ describe("readiness and metrics endpoint guard matching", () => {
     });
 });
 
+describe("metadata and brand assets are reachable without a session", () => {
+    // A crawler previewing a link, or an install prompt fetching the manifest,
+    // has no session; bouncing them to /login makes the whole M-8 metadata
+    // effort inert. None of these carry user data.
+    it.each([
+        "/robots.txt", "/manifest.webmanifest", "/og.png", "/icon.svg", "/apple-icon.png", "/favicon.ico",
+    ])("allows %s", (url) => {
+        expect(matches(url)).toBe(false);
+    });
+
+    // The exemptions are path-final: a prefix collision must not open a door.
+    it.each(["/og.png/secret", "/robots.txt/../../etc", "/icon.svgx", "/manifest.webmanifest/api"])
+        ("retains authentication for %s", (url) => {
+            expect(matches(url)).toBe(true);
+        });
+});
+
 describe("public authentication pages", () => {
     it.each(["/login", "/register", "/verify-email", "/verify-email/", "/verify-email#token=secret"])("permits unauthenticated access to %s", (path) => {
         expect(handle({ nextUrl: new URL(path, "https://chat.example.com"), auth: null })).toBeUndefined();
