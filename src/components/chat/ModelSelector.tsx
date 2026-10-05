@@ -41,15 +41,12 @@ export function ModelSelector() {
 
     if (!hasAnyValidKey) {
         return (
-            <Link href="/settings/providers">
-                <Button
-                    variant="outline"
-                    className="h-12 rounded-full border-border/70 bg-background/40 px-4"
-                >
+            <Button asChild variant="outline" className="h-12 rounded-full border-border/70 bg-background/40 px-4">
+                <Link href="/settings/providers">
                     <KeyRound className="h-4 w-4" />
                     Connect a provider
-                </Button>
-            </Link>
+                </Link>
+            </Button>
         );
     }
 
@@ -58,7 +55,12 @@ export function ModelSelector() {
             value={`${providerId}:${modelId}`}
             onValueChange={handleValueChange}
         >
-            <SelectTrigger className="h-12 w-full max-w-[260px] min-w-0 rounded-full border-border/70 bg-background/40 px-4 shadow-none">
+            {/* role=combobox does not take its name from contained text, so the
+                visible model/provider labels announce nothing on their own. */}
+            <SelectTrigger
+                aria-label="Chat model"
+                className="h-12 w-full max-w-[260px] min-w-0 rounded-full border-border/70 bg-background/40 px-4 shadow-none"
+            >
                 <div className="flex min-w-0 items-center gap-3">
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/14 text-primary">
                         <Sparkles className="h-4 w-4" />
