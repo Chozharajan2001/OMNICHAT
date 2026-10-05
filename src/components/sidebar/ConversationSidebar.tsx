@@ -7,6 +7,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useChatStore, type Conversation } from "@/stores/chat-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Modal } from "@/components/ui/modal";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { ConversationList } from "./ConversationList";
@@ -19,7 +20,6 @@ import {
     Search,
     Settings,
     Sparkles,
-    X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePersonalizationStore } from "@/stores/personalization-store";
@@ -239,6 +239,14 @@ export function ConversationSidebar() {
         }
     };
 
+    const handleConfirmDelete = () => {
+        if (deleteConfirmDialog?.type === "conversation") {
+            confirmDeleteConversation();
+        } else {
+            confirmDeleteProject();
+        }
+    };
+
     const closeMobileSidebar = () => {
         if (!isDesktop) {
             setSidebarOpen(false);
@@ -434,105 +442,73 @@ export function ConversationSidebar() {
             </aside>
 
             {/* New Project Dialog */}
-            {showNewProjectDialog && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center">
-                    <button
-                        type="button"
-                        aria-label="Close dialog"
-                        className="absolute inset-0 bg-black/45 backdrop-blur-sm"
-                        onClick={() => setShowNewProjectDialog(false)}
+            <Modal
+                open={showNewProjectDialog}
+                title="New Project"
+                showCloseButton
+                onClose={() => setShowNewProjectDialog(false)}
+            >
+                <div className="space-y-4">
+                    <Input
+                        value={newProjectName}
+                        onChange={(e) => setNewProjectName(e.target.value)}
+                        placeholder="Project name"
+                        className="h-11 rounded-xl"
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                                handleCreateProjectSubmit();
+                            }
+                        }}
+                        autoFocus
                     />
-                    <div className="glass-panel relative z-10 w-[90%] max-w-sm rounded-2xl border border-border/70 p-6 shadow-[0_28px_120px_rgba(0,0,0,0.32)]">
-                        <div className="mb-4 flex items-center justify-between">
-                            <h3 className="text-lg font-semibold">New Project</h3>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 rounded-full"
-                                onClick={() => setShowNewProjectDialog(false)}
-                            >
-                                <X className="h-4 w-4" />
-                            </Button>
-                        </div>
-                        <div className="space-y-4">
-                            <Input
-                                value={newProjectName}
-                                onChange={(e) => setNewProjectName(e.target.value)}
-                                placeholder="Project name"
-                                className="h-11 rounded-xl"
-                                onKeyDown={(e) => {
-                                    if (e.key === "Enter") {
-                                        handleCreateProjectSubmit();
-                                    }
-                                }}
-                                autoFocus
-                            />
-                            <div className="flex gap-2">
-                                <Button
-                                    variant="ghost"
-                                    className="flex-1 rounded-xl"
-                                    onClick={() => setShowNewProjectDialog(false)}
-                                >
-                                    Cancel
-                                </Button>
-                                <Button
-                                    className="flex-1 rounded-xl"
-                                    onClick={handleCreateProjectSubmit}
-                                    disabled={!newProjectName.trim()}
-                                >
-                                    Create
-                                </Button>
-                            </div>
-                        </div>
+                    <div className="flex gap-2">
+                        <Button
+                            variant="ghost"
+                            className="flex-1 rounded-xl"
+                            onClick={() => setShowNewProjectDialog(false)}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            className="flex-1 rounded-xl"
+                            onClick={handleCreateProjectSubmit}
+                            disabled={!newProjectName.trim()}
+                        >
+                            Create
+                        </Button>
                     </div>
                 </div>
-            )}
+            </Modal>
 
             {/* Delete Confirmation Dialog */}
-            {deleteConfirmDialog && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center">
-                    <button
-                        type="button"
-                        aria-label="Close dialog"
-                        className="absolute inset-0 bg-black/45 backdrop-blur-sm"
+            <Modal
+                open={!!deleteConfirmDialog}
+                title={deleteConfirmDialog?.type === "conversation" ? "Delete Conversation" : "Delete Project"}
+                showCloseButton
+                onClose={() => setDeleteConfirmDialog(null)}
+            >
+                <p className="mb-6 text-sm text-muted-foreground">
+                    {deleteConfirmDialog?.type === "conversation"
+                        ? "Are you sure you want to delete this conversation? This action cannot be undone."
+                        : "Delete this project? Conversations will remain and be unassigned."}
+                </p>
+                <div className="flex gap-2">
+                    <Button
+                        variant="ghost"
+                        className="flex-1 rounded-xl"
                         onClick={() => setDeleteConfirmDialog(null)}
-                    />
-                    <div className="glass-panel relative z-10 w-[90%] max-w-sm rounded-2xl border border-border/70 p-6 shadow-[0_28px_120px_rgba(0,0,0,0.32)]">
-                        <div className="mb-4">
-                            <h3 className="text-lg font-semibold">
-                                {deleteConfirmDialog.type === "conversation" ? "Delete Conversation" : "Delete Project"}
-                            </h3>
-                        </div>
-                        <p className="mb-6 text-sm text-muted-foreground">
-                            {deleteConfirmDialog.type === "conversation"
-                                ? "Are you sure you want to delete this conversation? This action cannot be undone."
-                                : "Delete this project? Conversations will remain and be unassigned."}
-                        </p>
-                        <div className="flex gap-2">
-                            <Button
-                                variant="ghost"
-                                className="flex-1 rounded-xl"
-                                onClick={() => setDeleteConfirmDialog(null)}
-                            >
-                                Cancel
-                            </Button>
-                            <Button
-                                variant="destructive"
-                                className="flex-1 rounded-xl"
-                                onClick={() => {
-                                    if (deleteConfirmDialog.type === "conversation") {
-                                        confirmDeleteConversation();
-                                    } else {
-                                        confirmDeleteProject();
-                                    }
-                                }}
-                            >
-                                Delete
-                            </Button>
-                        </div>
-                    </div>
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        variant="destructive"
+                        className="flex-1 rounded-xl"
+                        onClick={handleConfirmDelete}
+                    >
+                        Delete
+                    </Button>
                 </div>
-            )}
+            </Modal>
         </>
     );
 }
