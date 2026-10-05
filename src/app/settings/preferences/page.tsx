@@ -223,7 +223,7 @@ function PreferencesForm({ initialPreferences, updatePreferences }: {
                                         >
                                             <div>
                                                 <div className="font-medium">{option.label}</div>
-                                                <div className={`text-xs ${language === option.value ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
+                                                <div className={`text-xs ${language === option.value ? "text-primary-foreground" : "text-muted-foreground"}`}>
                                                     {option.note}
                                                 </div>
                                             </div>
