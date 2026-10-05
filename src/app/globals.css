@@ -95,8 +95,14 @@ html {
 }
 
 body {
-  height: 100vh;
-  overflow: hidden;
+  /* Two declarations on purpose: browsers without dvh support keep the vh line.
+     The fixed height + overflow:hidden used to make the whole document
+     unscrollable, which trapped the auth screens (measured: a /login button at
+     y=582 in a 568 viewport, and no scrollable ancestor at all). Chat keeps its
+     own locked shell via .app-shell plus h-dvh/overflow-hidden on the page. */
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: hidden;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 22%),
     radial-gradient(circle at top left, rgba(255, 255, 255, 0.04), transparent 24%),
@@ -137,8 +143,11 @@ textarea,
 }
 
 .app-shell {
-  height: 100vh;
-  overflow: hidden;
+  /* Screens that must lock their own height (chat) add h-dvh + overflow-hidden
+     on top of this; content screens (auth, 404) grow past the viewport and let
+     the document scroll instead. */
+  min-height: 100vh;
+  min-height: 100dvh;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent 24%),
     var(--background);

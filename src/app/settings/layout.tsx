@@ -63,7 +63,7 @@ export default function SettingsLayout({
     const pathname = usePathname();
 
     return (
-        <div className="h-screen overflow-y-auto px-4 py-6 md:px-6 md:py-8">
+        <div className="h-dvh overflow-y-auto px-4 py-6 md:px-6 md:py-8">
             <div className="mx-auto flex max-w-7xl flex-col gap-6">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <Button

@@ -7,7 +7,7 @@ import Link from "next/link";
  */
 export default function NotFound() {
     return (
-        <main className="app-shell flex min-h-screen items-center justify-center px-4">
+        <main className="app-shell flex min-h-dvh items-center justify-center px-4">
             <div className="glass-panel w-full max-w-md rounded-[2rem] border border-border/70 p-8 text-center">
                 <p className="section-kicker mb-3">404 — Not found</p>
                 <h1 className="text-3xl font-semibold tracking-tight">This desk drawer is empty</h1>

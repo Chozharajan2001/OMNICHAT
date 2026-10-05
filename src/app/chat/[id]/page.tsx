@@ -25,7 +25,7 @@ export default function ConversationPage() {
     }, [conversationId, setConversationId]);
 
     return (
-        <div className="app-shell flex h-screen overflow-hidden">
+        <div className="app-shell flex h-dvh overflow-hidden">
             {/* Sidebar */}
             <ConversationSidebar />
 

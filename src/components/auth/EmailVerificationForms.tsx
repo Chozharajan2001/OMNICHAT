@@ -97,7 +97,7 @@ function RequestForm({ register }: { register: boolean }) {
 export function EmailVerificationForms({ mode, enabled }: { mode: "register" | "verify"; enabled: boolean }) {
     const register = mode === "register";
     return (
-        <main className="app-shell flex min-h-screen items-center justify-center px-4 py-10">
+        <main className="app-shell flex min-h-dvh items-center justify-center px-4 py-10">
             <section className="glass-panel w-full max-w-md space-y-6 rounded-3xl border border-border p-8">
                 <h1 className="text-2xl font-semibold">{register ? "Create your account" : "Verify your email"}</h1>
                 {enabled ? <>

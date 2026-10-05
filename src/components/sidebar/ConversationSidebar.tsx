@@ -283,7 +283,7 @@ export function ConversationSidebar() {
 
             <aside
                 className={cn(
-                    "glass-panel fixed inset-y-0 left-0 z-40 flex h-screen flex-col border-r border-[var(--sidebar-border)] bg-[var(--sidebar)] text-[var(--sidebar-foreground)] transition-all duration-300",
+                    "glass-panel fixed inset-y-0 left-0 z-40 flex h-dvh flex-col border-r border-[var(--sidebar-border)] bg-[var(--sidebar)] text-[var(--sidebar-foreground)] transition-all duration-300",
                     "w-[min(88vw,22rem)]",
                     isSidebarOpen ? "translate-x-0" : "-translate-x-full",
                     "lg:relative lg:z-0 lg:translate-x-0",
