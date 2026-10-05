@@ -142,6 +142,24 @@ textarea,
   background: rgba(124, 109, 255, 0.26);
 }
 
+/* Kill switch for the transitions above and for animate-bounce (the streaming
+   dots in a message bubble run forever). iteration-count is the part that
+   matters: duration alone still leaves an element visibly looping. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  body::before {
+    display: none;
+  }
+}
+
 .app-shell {
   /* Screens that must lock their own height (chat) add h-dvh + overflow-hidden
      on top of this; content screens (auth, 404) grow past the viewport and let
