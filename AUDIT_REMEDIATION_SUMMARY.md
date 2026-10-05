@@ -657,7 +657,123 @@ output, exit 0 · 56 commits, clean tree, 50 ahead of `origin/master`.
 
 ---
 
-*Updated October 4, 2026 (Phase 7)*
+## Phase 8: Design and Accessibility Audit Remediation (COMPLETE, October 5, 2026)
+
+A 28-finding external design audit (5 critical, 9 major, 9 minor, 5 enhancement)
+arrived with its own caveat: *static code audit only, no dev server, no live
+render, run Phase 2/3 live to confirm contrast and overflow numbers before
+shipping fixes*. So every finding was treated as a lead: re-checked against
+source, then measured in a real browser over CDP before anything changed.
+
+**The audit's own numbers were wrong where they mattered.** C-2 claimed
+`--muted-foreground: #6f6558` scored ~4.0:1 and failed AA. Computed with the
+WCAG formula it is **5.06:1 and always passed**, so its proposed `#5d554a` was
+not applied. What actually failed were pairs it never checked:
+
+| Pair | Measured | Now |
+|---|---|---|
+| label `#fff7ec` on light `--primary` `#e56a1f` | 3.08 | 5.06 on `#b34a12` |
+| light `--primary` used as text on cream | 2.91 | 4.77 |
+| dark label `#f7f5ff` on `#7c6dff` | 3.55 | 4.88 on `#1c1005` |
+| dark label `#fff7f7` on `#f06565` | 2.95 | 6.30 on `#1a0606` |
+| hover fill `bg-primary/90` composites the label onto the page | 4.28 / 4.18 | 5.49 / 5.92 via `--primary-hover` |
+| `text-primary-foreground/80` on a selected option | 3.81 / 3.87 | solid token |
+
+Chrome's own contrast audit in Lighthouse flagged the login submit button
+independently, and reports nothing after the change. All of it is now pinned by
+`src/test/theme-contrast.test.ts`, which reads `globals.css` and fails the build
+if any pair drops under 4.5:1.
+
+**Two findings were confirmed but with the wrong symptom.** C-3: the settings
+screen was *not* trapping anyone — at 320x568 and at the 160x284 CSS viewport
+that equals 200% zoom, "Save preferences" was reached in 8 tab stops and was in
+view. The trap was on `/login` and `/register`, which have no inner scroller at
+all: a button at y=582 in a 568 viewport, `docScrollHeight` 568, zero scrollable
+ancestors. C-5: there was no horizontal scrollbar (the header clips); the
+selector's right edge sat at 327 on a 320 viewport and the wordmark measured
+`right: -184`, i.e. pushed off the left edge entirely.
+
+**Six things the audit never found**, all caught by measuring or by a guard this
+phase introduced:
+
+1. **axe `button-name` critical x4 on `/chat`** — four icon-only controls with no
+   text and no label, including the model selector, whose `role=combobox` does
+   not take its name from contained text, so "GPT-4o / OpenAI" announced nothing.
+2. **`scrollable-region-focusable` serious** — the message list could not be
+   scrolled from the keyboard at all.
+3. **Interactive controls nested inside `<a>`** — the conversation row's
+   move/archive/delete buttons, and two `<Link><Button>` pairs. Invalid HTML.
+4. **Row actions were `opacity-0 group-hover:opacity-100` with no focus variant** —
+   keyboard users could tab onto a control they could not see.
+5. **`GET /api/projects` returned `{ data: { projects } }` while both consumers
+   read `{ projects }`** — every project list in the app was permanently empty,
+   with no error anywhere. Found by accident while verifying a dialog.
+6. **`toaster.tsx` still styled itself off the raw palette** — `text-emerald-400`
+   on cream is 1.71:1.
+
+The audit's "44px or fail WCAG 2.2 AA" is also wrong as stated: 2.5.8 (AA) is
+24x24 and the existing 32px controls passed it. The 44px sizing was still
+applied, because it is the platform norm and it measured as fitting.
+
+| Commit | Finding |
+|---|---|
+| `2591dc5` | the real contrast failures, plus the contract test |
+| `e1f62e0` | the projects envelope bug above (not in the audit) |
+| `363dc6b` | C-4 dialogs: `role=dialog`, `aria-modal`, labelled title, focus trap, Escape, focus restored. The plan assumed Radix Dialog was installed; it is not, and is not a transitive dependency either, so the same contract is implemented in ~100 lines rather than adding a runtime dependency and regenerating the lockfile |
+| `b955dcc` | C-1 branded 404, scoped to signed-in visits (the guard redirects anonymous ones to `/login`) |
+| `50412cb` | C-3 `100vh`/`overflow:hidden` replaced by `dvh` with a `vh` fallback; locked screens state their own lock |
+| `c523de9` | C-5 fluid selector and a wordmark that yields below `sm` |
+| `e2ed827` | M-6 and N-5: names, hit areas, keyboard reveal, de-nesting |
+| `b31efbd` | M-7 `prefers-reduced-motion`, measured both ways with an inserted `animate-bounce` node |
+| `5d1f394` | M-3 four `confirm()` calls and one `prompt()` replaced by `ConfirmDialog` on the same Modal |
+| `3f82855` | M-5 the two native `<select>`s, keyboard-opened and arrow-navigated live |
+| `57733d2` | M-4 autofill hints and `role=alert` (register already had them) |
+| `9c028ae`, `2a2d76f` | M-2 plus the success token; `src/test/design-tokens.test.ts` makes "no raw palette in src" repo-wide |
+| `ffb6f98` | M-1 one hue family per theme, brand shadows tokenised, ambience derived from `--primary` |
+| `27c20f2` | M-9 `PrismLight`: refractor ships 913 KB of grammars, 86 KB are used; per-bubble `backdrop-filter` removed |
+| `41fc5d1` | M-8 metadata/OG/manifest/robots, and the guard exemption that made them reachable at all |
+| `79488bf`, `a77d5b3`, `ebe9489`, `7fd6bf1`, `2d2072b`, `9cc227e`, `f5246b1` | N-3, N-1, N-9, N-6/N-8, N-4, landmarks, E-4 |
+
+**Deliberately not done, with reasons.** N-2 (radius standardisation): ~40 call
+sites, visual regression risk, no gate to hold it — a half-migration is worse
+than none. N-7 and E-1/E-2: `@formkit/auto-animate`, Storybook and `cmdk` are new
+runtime or toolchain dependencies, which is an owner decision, not a cleanup.
+E-3: the "Connect a provider" CTA already exists in the header when no key is
+valid; prompt starters are a feature. E-4: `next-intl` was not shipped — the
+language preference does real work (`<html lang>`), so its label was corrected
+instead of the feature removed. M-8's "Lighthouse SEO >= 90" was not chased:
+every page is session-gated, so `robots.txt` disallows all and the root is
+`noindex`; Lighthouse therefore reports seo=63 with exactly one failing audit,
+`is-crawlable`, and accessibility 100. Indexing someone's private workspace is
+not a score to optimise for.
+
+**Method notes worth keeping.** Focus restoration could only be proven with
+`Emulation.setFocusEmulationEnabled`: a headless document reports
+`hasFocus() === false`, Chrome then never dispatches `focusin`, and the modal's
+"remember the trigger" logic looked broken when it was the harness. Reading
+`document.activeElement` in the open effect is also too late — React applies
+`autoFocus` during the commit — which is why the modal tracks the last focus
+outside a dialog instead. And `tsc` fails with a syntax error in
+`.next/dev/types/validator.ts` if it runs while `pnpm dev` is recompiling: a torn
+generated file, not a source problem.
+
+**Phase 8 verification (measured October 5, 2026)**: `tsc` clean · **989 tests
+across 32 files** (baseline 935/26) · quality **150 files, 0 errors, 0
+warnings**, **600 functions** · axe on `/chat` at 375x667 with a conversation
+present: **0 violations** (was 5, one critical) · census: 0 controls under 24px,
+0 without an accessible name, 0 interactive nodes nested in a link · Lighthouse
+`/login` accessibility 100, 0 failing contrast nodes (was 1) · 79 commits, clean
+tree.
+
+Test data created for these measurements (one user, one API key, one
+conversation, 14 seeded messages, one project) was deleted afterwards; the local
+`omnichat.db` tables are back to zero rows.
+
+**Push and deploy remain owner decisions.**
+
+---
+
+*Updated October 5, 2026 (Phase 8)*
 *Branch: master*
-*Commits: 56 including this one*
-*Tests: 935 passing across 26 files*
+*Commits: 79 including this one*
+*Tests: 989 passing across 32 files*
