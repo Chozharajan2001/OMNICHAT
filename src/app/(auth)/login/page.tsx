@@ -92,6 +92,19 @@ export default function LoginPage() {
                     </div>
                 </section>
 
+                {/* The panel above is lg-only, so without this the small-screen
+                    visitor gets a bare form with no statement of what the
+                    product is -- and no h1 on the page at all. */}
+                <section className="text-center lg:hidden">
+                    <div className="section-kicker mb-2 flex items-center justify-center gap-2">
+                        <Sparkles className="h-3.5 w-3.5" />
+                        Personal AI workspace
+                    </div>
+                    <h1 className="text-2xl font-semibold tracking-tight">
+                        One desk for every model you use.
+                    </h1>
+                </section>
+
                 <Card className="glass-panel w-full rounded-[2rem] border border-border/70 bg-background/50 shadow-[0_24px_100px_rgba(0,0,0,0.2)]">
                     <CardHeader className="space-y-2">
                         <div className="section-kicker flex items-center gap-2">
