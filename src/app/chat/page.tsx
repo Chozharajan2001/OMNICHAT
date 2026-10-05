@@ -37,15 +37,18 @@ export default function ChatPage() {
                         )}
                         {/* The wordmark is decoration; below sm it would push the
                             model selector off the right edge, so it yields. */}
-                        <div className="hidden min-w-0 space-y-0.5 sm:block">
-                            <div className="section-kicker flex items-center gap-2">
+                        <div className="min-w-0 space-y-0.5">
+                            <div className="section-kicker hidden items-center gap-2 sm:flex">
                                 <Sparkles className="h-3 w-3" />
                                 OmniChat Workspace
                             </div>
-                            <div className="flex items-center gap-2 text-base font-semibold tracking-tight">
-                                <Compass className="h-4 w-4 text-primary" />
-                                <span className="truncate">Start a conversation</span>
-                            </div>
+                            {/* Always in the accessibility tree, visible from sm up:
+                                hiding the whole block left the page with no h1 at
+                                phone widths. */}
+                            <h1 className="sr-only flex items-center gap-2 truncate text-base font-semibold tracking-tight sm:not-sr-only">
+                                <Compass className="h-4 w-4 shrink-0 text-primary" />
+                                Start a conversation
+                            </h1>
                         </div>
                     </div>
                     <ModelSelector />

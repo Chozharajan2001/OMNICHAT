@@ -45,15 +45,15 @@ export default function ConversationPage() {
                                 <PanelLeft className="h-4 w-4" />
                             </Button>
                         )}
-                        <div className="hidden min-w-0 space-y-0.5 sm:block">
-                            <div className="section-kicker flex items-center gap-2">
+                        <div className="min-w-0 space-y-0.5">
+                            <div className="section-kicker hidden items-center gap-2 sm:flex">
                                 <Sparkles className="h-3 w-3" />
                                 Active conversation
                             </div>
-                            <div className="flex items-center gap-2 text-base font-semibold tracking-tight">
+                            <h1 className="sr-only flex min-w-0 items-center gap-2 text-base font-semibold tracking-tight sm:not-sr-only">
                                 <MessageSquareText className="h-4 w-4 shrink-0 text-primary" />
                                 <span className="truncate">{conversationTitle || "Conversation"}</span>
-                            </div>
+                            </h1>
                         </div>
                     </div>
                     <ModelSelector />

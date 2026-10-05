@@ -81,7 +81,7 @@ export function ChatContainer({ conversationId, className }: ChatContainerProps)
     }, [conversationId, loadConversation, privateChatMode]);
 
     return (
-        <div className={cn("flex min-h-0 flex-1 flex-col", className)}>
+        <main className={cn("flex min-h-0 flex-1 flex-col", className)}>
             {privateChatMode ? (
                 <div className="flex-shrink-0 px-4 pt-4">
                     <Alert className="border-border/70 bg-background/35">
@@ -127,6 +127,6 @@ export function ChatContainer({ conversationId, className }: ChatContainerProps)
                     onStop={handleStop}
                 />
             </div>
-        </div>
+        </main>
     );
 }
