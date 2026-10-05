@@ -27,10 +27,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertCircle, Check, Keyboard, Languages, LayoutPanelLeft, Paintbrush, Rows3, Save, Sparkles } from "lucide-react";
 
+// The choice is not a translation: it sets <html lang> and data-language in
+// ThemeController, which is what screen readers and hyphenation use. Saying so
+// beats the previous note, which promised a localisation that does not exist.
 const LANGUAGE_OPTIONS: { value: AppLanguage; label: string; note: string }[] = [
-    { value: "en-US", label: "English (US)", note: "Default product language" },
-    { value: "en-GB", label: "English (UK)", note: "Alternative English locale" },
-    { value: "ta-IN", label: "Tamil (India)", note: "Preference saved for future localization" },
+    { value: "en-US", label: "English (US)", note: "Document language for assistive tech" },
+    { value: "en-GB", label: "English (UK)", note: "Same strings, British document language" },
+    { value: "ta-IN", label: "Tamil (India)", note: "Read and hyphenated as Tamil; interface strings stay English" },
 ];
 
 export default function PreferencesPage() {
