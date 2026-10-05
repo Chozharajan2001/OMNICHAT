@@ -52,18 +52,25 @@ export function ChatInput({
                                 {sendWithEnter ? "Enter to send" : "Ctrl/Cmd+Enter to send"}
                             </span>
                         </div>
+                        {/* A real label, visually hidden: an aria-label on a
+                            multiline control gives no label activation and is
+                            dropped by some voice-control grammars. */}
+                        <label htmlFor="chat-composer" className="sr-only">
+                            Type your message
+                        </label>
                         <Textarea
+                            id="chat-composer"
                             value={value}
                             onChange={onChange}
                             onKeyDown={handleKeyDown}
                             placeholder="Ask anything, compare models, or shape the reply with your own voice."
                             disabled={disabled || isLoading}
-                            aria-label="Type your message"
                             className={cn(
-                                "min-h-[108px] max-h-[220px] resize-none rounded-[1.5rem] border-0 bg-transparent px-4 py-4 text-base shadow-none sm:min-h-[120px]",
+                                "min-h-[68px] max-h-[220px] resize-none rounded-[1.5rem] border-0 bg-transparent px-4 py-3 text-base shadow-none",
+                                "sm:min-h-[108px] sm:py-4",
                                 "focus-visible:ring-0 focus-visible:ring-offset-0"
                             )}
-                            rows={4}
+                            rows={2}
                         />
                     </div>
 
