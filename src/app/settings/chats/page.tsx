@@ -3,10 +3,15 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Archive, EyeOff, MessageSquareDashed, RotateCcw, Trash2 } from "lucide-react";
 import { useChatStore, type Conversation } from "@/stores/chat-store";
 import { usePersonalizationStore } from "@/stores/personalization-store";
 import { useToast } from "@/stores/toast-store";
+
+function archivedDeleteCopy(conversation: Conversation | null): string {
+    return `“${conversation?.title ?? "This conversation"}” and its messages will be deleted permanently.`;
+}
 
 export default function ChatsSettingsPage() {
     const router = useRouter();
@@ -18,6 +23,8 @@ export default function ChatsSettingsPage() {
     const [archivedConversations, setArchivedConversations] = useState<Conversation[]>([]);
     const [isLoadingArchived, setIsLoadingArchived] = useState(true);
     const [feedback, setFeedback] = useState<string | null>(null);
+    const [confirmingDeleteAll, setConfirmingDeleteAll] = useState(false);
+    const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null);
 
     useEffect(() => {
         const fetchArchived = async () => {
@@ -42,10 +49,6 @@ export default function ChatsSettingsPage() {
     }, []);
 
     const handleDeleteAll = async () => {
-        if (!confirm("Delete all conversations? This cannot be undone.")) {
-            return;
-        }
-
         setIsDeleting(true);
         setFeedback(null);
 
@@ -98,10 +101,6 @@ export default function ChatsSettingsPage() {
     };
 
     const handleDeleteArchivedConversation = async (id: string) => {
-        if (!confirm("Delete this archived conversation?")) {
-            return;
-        }
-
         setFeedback(null);
 
         try {
@@ -123,6 +122,11 @@ export default function ChatsSettingsPage() {
             setFeedback(errorMessage);
             toastError("Delete failed", errorMessage);
         }
+    };
+
+    const confirmDeleteTarget = () => {
+        if (!deleteTarget) return;
+        handleDeleteArchivedConversation(deleteTarget.id);
     };
 
     return (
@@ -188,7 +192,7 @@ export default function ChatsSettingsPage() {
 
                     <Button
                         variant="destructive"
-                        onClick={handleDeleteAll}
+                        onClick={() => setConfirmingDeleteAll(true)}
                         disabled={isDeleting}
                         className="rounded-full"
                     >
@@ -244,7 +248,7 @@ export default function ChatsSettingsPage() {
                                         <Button
                                             variant="destructive"
                                             size="sm"
-                                            onClick={() => handleDeleteArchivedConversation(conversation.id)}
+                                            onClick={() => setDeleteTarget(conversation)}
                                             className="rounded-full"
                                         >
                                             <Trash2 className="h-3.5 w-3.5" />
@@ -288,6 +292,22 @@ export default function ChatsSettingsPage() {
                     </div>
                 ) : null}
             </section>
+
+            <ConfirmDialog
+                open={confirmingDeleteAll}
+                title="Delete all conversations"
+                description="Every conversation and its messages will be removed. Archived conversations stay until you delete them separately. This cannot be undone."
+                confirmLabel="Delete everything"
+                onConfirm={handleDeleteAll}
+                onClose={() => setConfirmingDeleteAll(false)}
+            />
+            <ConfirmDialog
+                open={!!deleteTarget}
+                title="Delete archived conversation"
+                description={archivedDeleteCopy(deleteTarget)}
+                onConfirm={confirmDeleteTarget}
+                onClose={() => setDeleteTarget(null)}
+            />
         </div>
     );
 }

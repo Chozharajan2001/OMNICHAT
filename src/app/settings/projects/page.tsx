@@ -1,6 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Input } from "@/components/ui/input";
+import { Modal } from "@/components/ui/modal";
 import { FolderKanban, Plus, Trash2 } from "lucide-react";
 import { useToast } from "@/stores/toast-store";
 import { useJsonResource } from "@/hooks/useJsonResource";
@@ -14,11 +18,18 @@ interface ProjectItem {
     };
 }
 
+function projectDeleteCopy(project: ProjectItem | null): string {
+    return `Delete ${project?.name ?? "this project"}? Its conversations stay in the workspace and become unassigned.`;
+}
+
 export default function ProjectsSettingsPage() {
     const { success, error: toastError } = useToast();
     const { data, loading: isLoading, error: loadError, refresh: fetchProjects } =
         useJsonResource<{ projects: ProjectItem[] }>("/api/projects", "Failed to load projects");
     const projects = data?.projects ?? [];
+    const [showCreate, setShowCreate] = useState(false);
+    const [newName, setNewName] = useState("");
+    const [deleteTarget, setDeleteTarget] = useState<ProjectItem | null>(null);
 
     if (loadError) {
         return <div role="alert" className="space-y-3 text-sm text-destructive">
@@ -27,25 +38,25 @@ export default function ProjectsSettingsPage() {
         </div>;
     }
 
-    const handleCreateProject = async () => {
-        const name = window.prompt("Project name");
-        if (!name?.trim()) {
-            return;
-        }
+    const createProject = async () => {
+        const name = newName.trim();
+        if (!name) return;
 
         try {
             const response = await fetch("/api/projects", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name: name.trim() }),
+                body: JSON.stringify({ name }),
             });
 
-            const data = await response.json();
+            const payload = await response.json();
             if (!response.ok) {
-                throw new Error(data.error || "Failed to create project");
+                throw new Error(payload.error || "Failed to create project");
             }
 
             await fetchProjects();
+            setNewName("");
+            setShowCreate(false);
             success("Project created");
         } catch (error) {
             console.error("Failed to create project:", error);
@@ -54,10 +65,6 @@ export default function ProjectsSettingsPage() {
     };
 
     const handleDeleteProject = async (projectId: string) => {
-        if (!confirm("Delete this project? Conversations will remain and be unassigned.")) {
-            return;
-        }
-
         try {
             const response = await fetch(`/api/projects/${projectId}`, {
                 method: "DELETE",
@@ -75,6 +82,11 @@ export default function ProjectsSettingsPage() {
         }
     };
 
+    const confirmDeleteTarget = () => {
+        if (!deleteTarget) return;
+        handleDeleteProject(deleteTarget.id);
+    };
+
     return (
         <div className="space-y-8">
             <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -86,7 +98,7 @@ export default function ProjectsSettingsPage() {
                         of work instead of a flat list.
                     </p>
                 </div>
-                <Button onClick={handleCreateProject} className="rounded-full">
+                <Button onClick={() => setShowCreate(true)} className="rounded-full">
                     <Plus className="h-4 w-4" />
                     New project
                 </Button>
@@ -128,7 +140,7 @@ export default function ProjectsSettingsPage() {
                                         variant="destructive"
                                         size="sm"
                                         className="rounded-full"
-                                        onClick={() => handleDeleteProject(project.id)}
+                                        onClick={() => setDeleteTarget(project)}
                                     >
                                         <Trash2 className="h-3.5 w-3.5" />
                                         Delete
@@ -139,6 +151,37 @@ export default function ProjectsSettingsPage() {
                     </div>
                 )}
             </section>
+
+            <Modal open={showCreate} title="New Project" onClose={() => setShowCreate(false)} showCloseButton>
+                <div className="space-y-4">
+                    <Input
+                        value={newName}
+                        onChange={(event) => setNewName(event.target.value)}
+                        placeholder="Project name"
+                        className="h-11 rounded-xl"
+                        autoFocus
+                        onKeyDown={(event) => {
+                            if (event.key === "Enter") void createProject();
+                        }}
+                    />
+                    <div className="flex gap-2">
+                        <Button variant="ghost" className="flex-1 rounded-xl" onClick={() => setShowCreate(false)}>
+                            Cancel
+                        </Button>
+                        <Button className="flex-1 rounded-xl" onClick={createProject} disabled={!newName.trim()}>
+                            Create
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+
+            <ConfirmDialog
+                open={!!deleteTarget}
+                title="Delete Project"
+                description={projectDeleteCopy(deleteTarget)}
+                onConfirm={confirmDeleteTarget}
+                onClose={() => setDeleteTarget(null)}
+            />
         </div>
     );
 }

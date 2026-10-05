@@ -4,10 +4,17 @@ import { useState } from "react";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { SUPPORTED_PROVIDERS, type ProviderDefinition } from "@/lib/mastra/providers";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Key, Trash2, ExternalLink, CheckCircle2, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { useToast } from "@/stores/toast-store";
+
+// Module scope so the dialog copy does not add branches to the page component's
+// own complexity budget.
+function keyDeleteCopy(provider: ProviderDefinition | null): string {
+    return `Remove the stored key for ${provider?.name ?? "this provider"}? Chats routed to it will fail until you save a new one.`;
+}
 
 export default function ProvidersPage() {
     const { keys, loading, error, addKey, removeKey } = useApiKeys();
@@ -45,11 +52,12 @@ export default function ProvidersPage() {
         }
     };
 
-    const handleDelete = async (providerId: string) => {
-        if (!confirm("Delete this API key?")) return;
+    const [deleteTarget, setDeleteTarget] = useState<ProviderDefinition | null>(null);
 
+    const removeTargetKey = async () => {
+        if (!deleteTarget) return;
         try {
-            await removeKey(providerId);
+            await removeKey(deleteTarget.id);
             success("API key removed");
         } catch (err: unknown) {
             console.error(err);
@@ -184,7 +192,7 @@ export default function ProvidersPage() {
                                     </div>
                                     <Button
                                         variant="destructive"
-                                        onClick={() => handleDelete(provider.id)}
+                                        onClick={() => setDeleteTarget(provider)}
                                         className="rounded-full"
                                     >
                                         <Trash2 className="h-4 w-4" />
@@ -242,6 +250,14 @@ export default function ProvidersPage() {
                     );
                 })}
             </div>
+
+            <ConfirmDialog
+                open={!!deleteTarget}
+                title="Delete API key"
+                description={keyDeleteCopy(deleteTarget)}
+                onConfirm={removeTargetKey}
+                onClose={() => setDeleteTarget(null)}
+            />
         </div>
     );
 }
