@@ -56,4 +56,14 @@ describe("preferences page with no saved row", () => {
         expect(screen.queryByText(/Preferences unavailable/i)).toBeNull();
         expect(screen.getByText(/Personalize your desk/i)).toBeTruthy();
     });
+
+    it("picks provider and model with the shared Select, not a native one", () => {
+        // M-5: this page had raw <select>s while every other picker in the app is
+        // the Radix one, so the trigger, the focus ring and the option list all
+        // rendered differently per OS.
+        render(<PreferencesPage />);
+        expect(document.querySelectorAll("select")).toHaveLength(0);
+        expect(screen.getByLabelText("Provider").getAttribute("role")).toBe("combobox");
+        expect(screen.getByLabelText("Model").getAttribute("role")).toBe("combobox");
+    });
 });

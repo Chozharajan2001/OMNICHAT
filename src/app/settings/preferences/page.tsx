@@ -16,6 +16,13 @@ import {
     type ModelDefinition,
 } from "@/lib/mastra/providers";
 import { Button } from "@/components/ui/button";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Check, Keyboard, Languages, LayoutPanelLeft, Paintbrush, Rows3, Save, Sparkles } from "lucide-react";
 
@@ -158,35 +165,55 @@ function PreferencesForm({ initialPreferences, updatePreferences }: {
                         </div>
 
                         <div className="grid gap-4 md:grid-cols-2">
-                            <label className="space-y-2">
-                                <span className="text-sm font-medium">Provider</span>
-                                <select
+                            <div className="space-y-2">
+                                <div className="text-sm font-medium" id="default-provider-label">
+                                    Provider
+                                </div>
+                                <Select
                                     value={providerId}
-                                    onChange={(e) => setProviderId(e.target.value)}
-                                    className="flex h-12 w-full rounded-2xl border border-input bg-background/60 px-4 text-sm"
+                                    onValueChange={setProviderId}
                                 >
-                                    {SUPPORTED_PROVIDERS.map((provider) => (
-                                        <option key={provider.id} value={provider.id}>
-                                            {provider.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </label>
+                                    <SelectTrigger
+                                        id="default-provider"
+                                        aria-labelledby="default-provider-label"
+                                        className="h-12 w-full rounded-2xl border-input bg-background/60 px-4"
+                                    >
+                                        <SelectValue placeholder="Select a provider" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {SUPPORTED_PROVIDERS.map((provider) => (
+                                            <SelectItem key={provider.id} value={provider.id}>
+                                                {provider.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
 
-                            <label className="space-y-2">
-                                <span className="text-sm font-medium">Model</span>
-                                <select
+                            <div className="space-y-2">
+                                <div className="text-sm font-medium" id="default-model-label">
+                                    Model
+                                </div>
+                                <Select
                                     value={modelId}
-                                    onChange={(e) => setModelId(e.target.value)}
-                                    className="flex h-12 w-full rounded-2xl border border-input bg-background/60 px-4 text-sm"
+                                    onValueChange={setModelId}
                                 >
-                                    {availableModels.map((model) => (
-                                        <option key={model.id} value={model.id}>
-                                            {model.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </label>
+                                    <SelectTrigger
+                                        id="default-model"
+                                        aria-labelledby="default-model-label"
+                                        className="h-12 w-full rounded-2xl border-input bg-background/60 px-4"
+                                    >
+                                        <SelectValue placeholder="Select a model" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {availableModels.map((model) => (
+                                            <SelectItem key={model.id} value={model.id}>
+                                                {model.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
                         </div>
                     </div>
 
