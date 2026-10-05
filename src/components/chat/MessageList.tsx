@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowDown } from "lucide-react";
 import { MessageBubble } from "./MessageBubble";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePersonalizationStore } from "@/stores/personalization-store";
@@ -20,6 +21,24 @@ interface MessageListProps {
     showTokenCount?: boolean;
 }
 
+// Within this many pixels of the bottom the reader is still "at the end", so
+// new content keeps pulling them along.
+const STICK_THRESHOLD_PX = 80;
+
+function JumpToLatest({ visible, onClick }: { visible: boolean; onClick: () => void }) {
+    if (!visible) return null;
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className="glass-panel absolute bottom-4 left-1/2 flex h-11 -translate-x-1/2 items-center gap-2 rounded-full border border-border/70 px-4 text-sm shadow-[0_16px_40px_rgba(0,0,0,0.18)]"
+        >
+            <ArrowDown className="h-4 w-4" aria-hidden="true" />
+            Jump to latest
+        </button>
+    );
+}
+
 function MessageSkeleton() {
     return (
         <div className="flex gap-3 px-4 py-3">
@@ -35,14 +54,33 @@ function MessageSkeleton() {
 
 export function MessageList({ messages, isLoading, isInitialLoading, showTokenCount = false }: MessageListProps) {
     const scrollRef = useRef<HTMLDivElement>(null);
+    const stickToBottom = useRef(true);
+    const [awayFromBottom, setAwayFromBottom] = useState(false);
     const chatDensity = usePersonalizationStore((state) => state.chatDensity);
     const welcomeMessage = usePersonalizationStore((state) => state.welcomeMessage);
 
+    const scrollToLatest = useCallback(() => {
+        const el = scrollRef.current;
+        if (!el) return;
+        el.scrollTop = el.scrollHeight;
+        stickToBottom.current = true;
+        setAwayFromBottom(false);
+    }, []);
+
+    // Only while the reader is at the end. This used to jump to the bottom on
+    // every message change, which yanked anyone who scrolled up back down on
+    // each streamed token, so history could not be read while an answer ran.
     useEffect(() => {
-        if (scrollRef.current) {
-            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-        }
-    }, [messages]);
+        if (stickToBottom.current) scrollToLatest();
+    }, [messages, scrollToLatest]);
+
+    function handleScroll() {
+        const el = scrollRef.current;
+        if (!el) return;
+        const away = el.scrollHeight - el.scrollTop - el.clientHeight > STICK_THRESHOLD_PX;
+        stickToBottom.current = !away;
+        setAwayFromBottom(away);
+    }
 
     // Show skeleton during initial load
     if (isInitialLoading) {
@@ -60,9 +98,13 @@ export function MessageList({ messages, isLoading, isInitialLoading, showTokenCo
 
     if (messages.length === 0) {
         return (
-            <div className="h-full overflow-auto">
-                <div className="flex h-full flex-col items-center justify-center px-6 py-12 text-center">
-                    <div className="glass-panel max-w-4xl rounded-[2rem] border border-border/70 px-8 py-12 shadow-[0_28px_120px_rgba(0,0,0,0.24)]">
+            <div
+                className="h-full overflow-auto"
+                tabIndex={0}
+                aria-label="Welcome panel"
+            >
+                <div className="flex min-h-full flex-col items-center justify-center px-4 py-6 text-center sm:px-6 sm:py-12">
+                    <div className="glass-panel max-w-4xl rounded-[2rem] border border-border/70 px-5 py-8 sm:px-8 sm:py-12 shadow-[0_28px_120px_rgba(0,0,0,0.24)]">
                         <div className="section-kicker mb-4">Personal workspace</div>
                         <h2 className="section-title mb-4">
                             Shape one assistant desk for every model you use.
@@ -88,30 +130,36 @@ export function MessageList({ messages, isLoading, isInitialLoading, showTokenCo
     }
 
     return (
-        <div
-            ref={scrollRef}
-            role="log"
-            aria-live="polite"
-            aria-label="Chat messages"
-            className="chat-scroll h-full overflow-y-auto rounded-[2rem] border border-border/60 bg-background/20"
-        >
-            <div className={chatDensity === "compact" ? "flex flex-col py-3" : "flex flex-col py-4"}>
-                {messages.map((message, index) => (
-                    <MessageBubble
-                        key={message.id || `msg-${index}`}
-                        role={message.role}
-                        content={message.content}
-                        tokenCount={message.tokenCount}
-                        showTokenCount={showTokenCount}
-                        density={chatDensity}
-                        isStreaming={
-                            isLoading &&
-                            index === messages.length - 1 &&
-                            message.role === "assistant"
-                        }
-                    />
-                ))}
+        <div className="relative h-full">
+            <div
+                ref={scrollRef}
+                onScroll={handleScroll}
+                role="log"
+                aria-live="polite"
+                aria-label="Chat messages"
+                tabIndex={0}
+                className="chat-scroll h-full overflow-y-auto rounded-[2rem] border border-border/60 bg-background/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+                <div className={chatDensity === "compact" ? "flex flex-col py-3" : "flex flex-col py-4"}>
+                    {messages.map((message, index) => (
+                        <MessageBubble
+                            key={message.id || `msg-${index}`}
+                            role={message.role}
+                            content={message.content}
+                            tokenCount={message.tokenCount}
+                            showTokenCount={showTokenCount}
+                            density={chatDensity}
+                            isStreaming={
+                                isLoading &&
+                                index === messages.length - 1 &&
+                                message.role === "assistant"
+                            }
+                        />
+                    ))}
+                </div>
             </div>
+
+            <JumpToLatest visible={awayFromBottom} onClick={scrollToLatest} />
         </div>
     );
 }
