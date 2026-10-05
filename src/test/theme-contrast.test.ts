@@ -56,6 +56,8 @@ function pairs(map: Record<string, string>): Array<[string, string, string]> {
     return [
         ["label on filled primary", map["--primary-foreground"], map["--primary"]],
         ["label on filled destructive", map["--destructive-foreground"], map["--destructive"]],
+        ["label on filled success", map["--success-foreground"], map["--success"]],
+        ["success used as text and icon", map["--success"], map["--background"]],
         ["label on primary hover", map["--primary-foreground"], map["--primary-hover"]],
         ["label on destructive hover", map["--destructive-foreground"], map["--destructive-hover"]],
         ["primary used as text", map["--primary"], map["--background"]],

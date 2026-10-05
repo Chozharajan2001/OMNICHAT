@@ -19,6 +19,8 @@
   --destructive: #c44125;
   --destructive-foreground: #fff7f4;
   --destructive-hover: #b03a20;
+  --success: #0e6b4a;
+  --success-foreground: #f4fbf7;
   --border: rgba(28, 24, 20, 0.12);
   --input: rgba(28, 24, 20, 0.08);
   --ring: rgba(179, 74, 18, 0.45);
@@ -48,6 +50,8 @@
   --destructive: #f06565;
   --destructive-foreground: #1a0606;
   --destructive-hover: #f5807f;
+  --success: #34d399;
+  --success-foreground: #04150e;
   --border: rgba(255, 255, 255, 0.08);
   --input: rgba(255, 255, 255, 0.06);
   --ring: rgba(124, 109, 255, 0.42);
@@ -76,6 +80,8 @@
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-destructive-hover: var(--destructive-hover);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
