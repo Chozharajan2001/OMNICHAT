@@ -23,8 +23,9 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { Check, Keyboard, Languages, LayoutPanelLeft, Paintbrush, Rows3, Save, Sparkles } from "lucide-react";
+import { AlertCircle, Check, Keyboard, Languages, LayoutPanelLeft, Paintbrush, Rows3, Save, Sparkles } from "lucide-react";
 
 const LANGUAGE_OPTIONS: { value: AppLanguage; label: string; note: string }[] = [
     { value: "en-US", label: "English (US)", note: "Default product language" },
@@ -35,10 +36,22 @@ const LANGUAGE_OPTIONS: { value: AppLanguage; label: string; note: string }[] = 
 export default function PreferencesPage() {
     const { preferences, loading, error, updatePreferences } = usePreferences();
     if (loading) {
-        return <p className="text-sm text-muted-foreground">Loading preferences...</p>;
+        return (
+            <div role="status" aria-live="polite" className="space-y-4">
+                <p className="sr-only">Loading preferences</p>
+                <Skeleton className="h-9 w-64" />
+                <Skeleton className="h-40 w-full rounded-[1.75rem]" />
+                <Skeleton className="h-40 w-full rounded-[1.75rem]" />
+            </div>
+        );
     }
     if (error) {
-        return <p className="text-sm text-destructive">Error: {error}</p>;
+        return (
+            <div role="alert" className="flex items-start gap-3 rounded-2xl border border-destructive/40 bg-destructive/10 p-6 text-sm text-destructive">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                <span>{error}</span>
+            </div>
+        );
     }
     // A new account legitimately has no preferences row yet (GET returns
     // { preferences: null }). That is not an error: rendering the defaults is the

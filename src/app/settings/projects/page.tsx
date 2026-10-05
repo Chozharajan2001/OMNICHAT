@@ -106,7 +106,7 @@ export default function ProjectsSettingsPage() {
 
             <section className="rounded-[1.75rem] border border-border/70 bg-background/30 p-6">
                 {isLoading ? (
-                    <div className="text-sm text-muted-foreground">Loading projects...</div>
+                    <div role="status" aria-live="polite" className="text-sm text-muted-foreground">Loading projects...</div>
                 ) : projects.length === 0 ? (
                     <div className="rounded-2xl border border-dashed border-border/70 bg-background/20 p-4 text-sm text-muted-foreground">
                         No projects yet. Create one to start grouping conversations.

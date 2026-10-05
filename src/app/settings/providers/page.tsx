@@ -6,7 +6,8 @@ import { SUPPORTED_PROVIDERS, type ProviderDefinition } from "@/lib/mastra/provi
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
-import { Key, Trash2, ExternalLink, CheckCircle2, Sparkles } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Key, Trash2, ExternalLink, CheckCircle2, Sparkles, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { useToast } from "@/stores/toast-store";
 
@@ -82,14 +83,25 @@ export default function ProvidersPage() {
             </div>
 
             {loading ? (
-                <div className="rounded-[1.75rem] border border-border/70 bg-background/30 p-6 text-sm text-muted-foreground">
-                    Loading provider connections...
+                <div role="status" aria-live="polite" className="space-y-3">
+                    <p className="sr-only">Loading provider connections</p>
+                    {[0, 1, 2].map((row) => (
+                        <div key={row} className="flex items-center gap-4 rounded-[1.75rem] border border-border/70 bg-background/30 p-6">
+                            <Skeleton className="h-10 w-10 rounded-2xl" />
+                            <div className="flex-1 space-y-2">
+                                <Skeleton className="h-4 w-32" />
+                                <Skeleton className="h-3 w-56" />
+                            </div>
+                            <Skeleton className="h-9 w-24 rounded-full" />
+                        </div>
+                    ))}
                 </div>
             ) : null}
 
             {error ? (
-                <div className="rounded-[1.75rem] border border-destructive/40 bg-destructive/10 p-6 text-sm text-destructive">
-                    {error}
+                <div role="alert" className="flex items-start gap-3 rounded-[1.75rem] border border-destructive/40 bg-destructive/10 p-6 text-sm text-destructive">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                    <span>{error}</span>
                 </div>
             ) : null}
 

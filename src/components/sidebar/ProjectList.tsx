@@ -56,7 +56,7 @@ export function ProjectList({
                 All chats
             </Button>
             {isLoading ? (
-                <div className="px-2 py-2 text-xs text-muted-foreground">Loading projects...</div>
+                <div role="status" aria-live="polite" className="px-2 py-2 text-xs text-muted-foreground">Loading projects...</div>
             ) : projects.length === 0 ? (
                 <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-background/20 p-3 text-xs text-muted-foreground">
                     No projects yet.
