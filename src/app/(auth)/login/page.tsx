@@ -11,7 +11,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Chrome, Github, KeyRound, ShieldCheck, Sparkles } from "lucide-react";
+import { AlertCircle, Chrome, Github, KeyRound, ShieldCheck, Sparkles } from "lucide-react";
 
 export default function LoginPage() {
     const router = useRouter();
@@ -105,8 +105,9 @@ export default function LoginPage() {
                     </CardHeader>
                     <CardContent className="space-y-4">
                     {error && (
-                        <div className="rounded-2xl bg-destructive/15 p-3 text-sm text-destructive">
-                            {error}
+                        <div role="alert" className="flex items-start gap-2 rounded-2xl bg-destructive/15 p-3 text-sm text-destructive">
+                            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                            <span>{error}</span>
                         </div>
                     )}
 
@@ -122,6 +123,9 @@ export default function LoginPage() {
                                 placeholder="you@example.com"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
+                                autoComplete="email"
+                                autoCapitalize="none"
+                                spellCheck={false}
                                 disabled={isLoading}
                                 required
                             />
@@ -136,6 +140,7 @@ export default function LoginPage() {
                                 placeholder="••••••••"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
+                                autoComplete="current-password"
                                 disabled={isLoading}
                                 required
                             />
