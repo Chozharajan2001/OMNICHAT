@@ -135,11 +135,20 @@ describe("OpenAPI response shapes match what the handlers emit", () => {
         ]);
     });
 
-    it("wraps only projects in the data envelope", () => {
-        const documented = (path: string, method: string) => JSON.stringify(spec().paths[path]?.[method] ?? {});
-        expect(documented("/projects", "get")).toContain("ProjectWithCount");
-        expect(documented("/preferences", "get")).not.toContain("ProjectWithCount");
-        expect(Object.keys(spec().paths["/api-keys"]?.get ?? {})).toBeTruthy();
+    it("serves the projects list flat, the way both consumers read it", () => {
+        // The handler used to wrap this one collection in `{ data: {...} }` while
+        // the sidebar and settings/projects both destructured `{ projects }`, so
+        // every project list rendered empty and nothing failed loudly.
+        const response = spec().paths["/projects"]?.get as {
+            responses: { "200": { content: { "application/json": { schema: { properties?: Record<string, unknown> } } } } };
+        };
+        expect(Object.keys(response.responses["200"].content["application/json"].schema.properties ?? {})).toEqual(["projects"]);
+
+        const source = readFileSync(routeFileFor("/projects"), "utf8");
+        expect(source).toContain("NextResponse.json({ projects })");
+        expect(source).not.toContain("{ data: {");
+
+        expect(JSON.stringify(spec().paths["/preferences"]?.get)).not.toContain("data");
     });
 
     it("documents the degraded readiness tier and the fail-closed metrics 404", () => {

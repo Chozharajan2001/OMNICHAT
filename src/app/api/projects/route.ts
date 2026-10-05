@@ -26,7 +26,10 @@ export async function GET() {
         }
 
         const projects = await getProjects(session.user.id);
-        return NextResponse.json({ data: { projects } });
+        // Flat shape: both consumers (the sidebar Projects section and
+        // settings/projects) read `{ projects }`, as every other collection route
+        // does. The old nested envelope made both lists render empty.
+        return NextResponse.json({ projects });
     } catch (error: unknown) {
         console.error("Failed to fetch projects:", error);
         return NextResponse.json(
@@ -66,7 +69,7 @@ export async function POST(request: Request) {
         const project = await createProject(session.user.id, name, color);
         
         return NextResponse.json(
-            { data: { project } },
+            { project },
             {
                 status: 201,
                 headers: getRateLimitHeaders(rateLimit.remaining, rateLimit.resetTime, WRITE_RATE_LIMIT),

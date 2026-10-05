@@ -2,7 +2,7 @@
   "openapi": "3.0.0",
   "info": {
     "title": "OmniChat API",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "description": "OmniChat is a desktop-first, self-hostable AI chat workspace with BYOK (Bring Your Own Key) support. This API covers conversations, messages, projects, provider credentials, user preferences, streaming chat and operational endpoints.\n\nEvery path below is relative to the `/api` base in `servers`. Authentication is the NextAuth session cookie, enforced by the route guard in src/proxy.ts for all paths except `/health` and the exact `/metrics` (which is gated by its bearer token instead) and the `/auth/*` namespace. Mutations with a JSON body additionally require a same-origin `Origin`/`Referer` (403), a JSON content type (415), and a resolvable canonical origin (503 when `APP_ORIGIN`/`NEXTAUTH_URL` are unset in production).",
     "contact": {
       "name": "OmniChat Support",
@@ -673,21 +673,13 @@
                 "schema": {
                   "type": "object",
                   "required": [
-                    "data"
+                    "projects"
                   ],
                   "properties": {
-                    "data": {
-                      "type": "object",
-                      "required": [
-                        "projects"
-                      ],
-                      "properties": {
-                        "projects": {
-                          "type": "array",
-                          "items": {
-                            "$ref": "#/components/schemas/ProjectWithCount"
-                          }
-                        }
+                    "projects": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ProjectWithCount"
                       }
                     }
                   }
@@ -761,19 +753,11 @@
                 "schema": {
                   "type": "object",
                   "required": [
-                    "data"
+                    "project"
                   ],
                   "properties": {
-                    "data": {
-                      "type": "object",
-                      "required": [
-                        "project"
-                      ],
-                      "properties": {
-                        "project": {
-                          "$ref": "#/components/schemas/Project"
-                        }
-                      }
+                    "project": {
+                      "$ref": "#/components/schemas/Project"
                     }
                   }
                 }

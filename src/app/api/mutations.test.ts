@@ -134,7 +134,7 @@ const mutations: Mutation[] = [
     },
     {
         name: "POST projects", method: "POST", path: "/api/projects", handle: createProject,
-        body: { name: PROJECT.name, color: PROJECT.color }, status: 201, response: { data: { project: PROJECT } },
+        body: { name: PROJECT.name, color: PROJECT.color }, status: 201, response: { project: PROJECT },
         verify: () => { expect(effects.createProject).toHaveBeenCalledExactlyOnceWith(USER, PROJECT.name, PROJECT.color); },
     },
     {

@@ -3,8 +3,8 @@
 // NOTE ON ACTUAL USAGE (audit D4, verified against the route handlers): no route
 // imports these helpers. Every /api handler builds its own NextResponse, so the
 // "standard envelope" these functions describe is NOT the shipped contract -
-// only /api/projects returns { data: {...} }, and the rest return bare objects.
-// requireAuth is the single exception: src/lib/auth/__tests__/config.test.ts
+// every route returns a bare object ({ projects }, { keys }, { preferences },
+// ...). requireAuth is the single exception: src/lib/auth/__tests__/config.test.ts
 // imports it as a parity check that this guard and the session helper reject the
 // same way. Kept for that assertion and as the intended landing spot for future
 // routes; treat any claim of blanket envelope/error standardization as stale.
