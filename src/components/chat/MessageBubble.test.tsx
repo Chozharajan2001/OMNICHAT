@@ -8,7 +8,10 @@ vi.mock("react-markdown", () => ({
 }));
 
 vi.mock("react-syntax-highlighter", () => ({
-    Prism: ({ children }: { children: string }) => <pre data-testid="syntax">{children}</pre>,
+    PrismLight: Object.assign(
+        ({ children }: { children: string }) => <pre data-testid="syntax">{children}</pre>,
+        { registerLanguage: vi.fn() }
+    ),
 }));
 
 vi.mock("react-syntax-highlighter/dist/esm/styles/prism", () => ({

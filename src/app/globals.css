@@ -188,6 +188,15 @@ textarea,
   backdrop-filter: blur(18px);
 }
 
+/* Same surface, no backdrop blur. backdrop-filter is per-pixel work over
+   whatever is behind it, and message bubbles are the one surface that repeats
+   with thread length -- a long conversation used to composite dozens of blurred
+   layers while scrolling. Chrome and Safari keep the blur on the chrome
+   (header, sidebar, dialogs), where there is exactly one of each. */
+.surface-panel {
+  background: var(--panel);
+}
+
 .section-title {
   font-size: clamp(2.2rem, 5vw, 4.4rem);
   font-weight: 700;
