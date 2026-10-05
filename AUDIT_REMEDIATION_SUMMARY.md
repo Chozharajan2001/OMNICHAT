@@ -743,9 +743,14 @@ valid; prompt starters are a feature. E-4: `next-intl` was not shipped — the
 language preference does real work (`<html lang>`), so its label was corrected
 instead of the feature removed. M-8's "Lighthouse SEO >= 90" was not chased:
 every page is session-gated, so `robots.txt` disallows all and the root is
-`noindex`; Lighthouse therefore reports seo=63 with exactly one failing audit,
-`is-crawlable`, and accessibility 100. Indexing someone's private workspace is
-not a score to optimise for.
+`noindex`. Lighthouse therefore fails `is-crawlable` by design and scores
+accessibility 100 with zero contrast failures. The SEO number is not stable
+across runs in this sandbox (63, then 54): the second run also reported
+`robots-txt` failing, with the explanation "Lighthouse was unable to download a
+robots.txt file" — a fetch failure, not a parse failure. A direct request returns
+a valid 27-byte file (`User-Agent: *` / `Disallow: /`), and the same proxy that
+blocks Lighthouse's localhost fetch is why `curl` here needs `--noproxy '*'`.
+Indexing someone's private workspace is not a score to optimise for.
 
 **Method notes worth keeping.** Focus restoration could only be proven with
 `Emulation.setFocusEmulationEnabled`: a headless document reports
@@ -759,11 +764,24 @@ generated file, not a source problem.
 
 **Phase 8 verification (measured October 5, 2026)**: `tsc` clean · **989 tests
 across 32 files** (baseline 935/26) · quality **150 files, 0 errors, 0
-warnings**, **600 functions** · axe on `/chat` at 375x667 with a conversation
-present: **0 violations** (was 5, one critical) · census: 0 controls under 24px,
-0 without an accessible name, 0 interactive nodes nested in a link · Lighthouse
-`/login` accessibility 100, 0 failing contrast nodes (was 1) · 79 commits, clean
-tree.
+warnings**, **606 functions** · 17/17 quality tooling tests · Prisma drift green
+(11 indexes) · axe on `/chat` at 375x667 with a conversation present: **0
+violations** (was 5, one critical) · census: 0 controls under 24px, 0 without an
+accessible name, 0 interactive nodes nested in a link · Lighthouse `/login`
+accessibility 100, 0 failing contrast nodes (was 1) · 80 commits, clean tree.
+
+**Independently re-executed after the ledger was written**, because "measured"
+only means something if it survives a second run: `tsc`, `eslint`,
+`quality:check`, `quality:test`, `db:drift-check` and the full suite were all
+re-run from scratch and returned the same numbers (0 / 0 / 150 files 0 errors /
+17 pass 0 fail / no drift / 989 passing). The axe pass and the control census
+were re-run against a freshly recreated session and conversation and again
+returned 0 violations and 0/0/0. That re-run is also what caught the Lighthouse
+discrepancy described above: the first repeat reported `meta-description` and
+`robots-txt` as failing, which turned out to be a measurement against a dev
+server that had been OOM-killed mid-run (`exit 134`) — the served HTML does
+carry the description, and `robots.txt` is valid on direct fetch. A claim that
+only holds while the harness is healthy is not a result.
 
 Test data created for these measurements (one user, one API key, one
 conversation, 14 seeded messages, one project) was deleted afterwards; the local
@@ -775,5 +793,5 @@ conversation, 14 seeded messages, one project) was deleted afterwards; the local
 
 *Updated October 5, 2026 (Phase 8)*
 *Branch: master*
-*Commits: 79 including this one*
+*Commits: 81 including this one*
 *Tests: 989 passing across 32 files*
