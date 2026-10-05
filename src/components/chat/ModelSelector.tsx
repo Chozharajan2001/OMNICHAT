@@ -58,7 +58,7 @@ export function ModelSelector() {
             value={`${providerId}:${modelId}`}
             onValueChange={handleValueChange}
         >
-            <SelectTrigger className="h-12 w-[260px] rounded-full border-border/70 bg-background/40 px-4 shadow-none">
+            <SelectTrigger className="h-12 w-full max-w-[260px] min-w-0 rounded-full border-border/70 bg-background/40 px-4 shadow-none">
                 <div className="flex min-w-0 items-center gap-3">
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/14 text-primary">
                         <Sparkles className="h-4 w-4" />
