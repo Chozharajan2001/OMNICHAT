@@ -680,7 +680,7 @@ describe("POST /api/chat - fault injection with pre-stream persistence", () => {
             expect(console.error).toHaveBeenCalledExactlyOnceWith("Failed to save messages:", error);
         });
 
-        it("logs title-update rejection after the transaction without retrying message writes", async () => {
+        it("logs a title outage as a title outage, after a good save", async () => {
             const error = new Error("synthetic title update outage");
             mocks.updateConversation.mockRejectedValueOnce(error);
             const response = await POST(request());
@@ -688,7 +688,9 @@ describe("POST /api/chat - fault injection with pre-stream persistence", () => {
             await expect(finish()).resolves.toBeUndefined();
             expectCompletionPersisted(NEW_ID);
             expect(mocks.updateConversation).toHaveBeenCalledExactlyOnceWith(NEW_ID, USER_ID, { title: USER_TEXT });
-            expect(console.error).toHaveBeenCalledExactlyOnceWith("Failed to save messages:", error);
+            // Previously this reported "Failed to save messages" for a reply
+            // that had saved fine, sending the reader to the wrong table.
+            expect(console.error).toHaveBeenCalledExactlyOnceWith("Failed to title the conversation:", error);
             expect(response.status).toBe(200);
         });
 
@@ -754,6 +756,10 @@ describe("POST /api/chat - fault injection with pre-stream persistence", () => {
             const response = await POST(request({ projectId: PROJECT_ID, folderId: FOLDER_ID }));
 
             expect(response.status).toBe(200);
+            // folderId left the contract: no Folder model exists in either
+            // schema, so the value could only land in a column nothing lists,
+            // renames or deletes by, and nothing owns it. An older client that
+            // still sends it is ignored, not rejected.
             expect(mocks.createConversation).toHaveBeenCalledExactlyOnceWith(
                 USER_ID, "openai", "gpt-4o",
                 { title: "New Chat", systemPrompt: undefined, projectId: PROJECT_ID },

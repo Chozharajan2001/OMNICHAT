@@ -30,6 +30,28 @@ import { recordChatMessage } from "@/lib/metrics";
 
 export const maxDuration = 60; // Allow up to 60 seconds for streaming
 
+/**
+ * Name a brand-new conversation after its first exchange, and say so if that
+ * fails -- separately from the message write, which is the other thing that can
+ * go wrong at this point. Only runs once the reply is stored.
+ */
+async function titleFirstTurn(
+    saved: boolean,
+    isFirstTurn: boolean,
+    conversationId: string,
+    userId: string,
+    firstUserMessage: string
+): Promise<void> {
+    if (!saved || !isFirstTurn) return;
+    try {
+        await updateConversation(conversationId, userId, {
+            title: generateTitleFromMessage(firstUserMessage),
+        });
+    } catch (error: unknown) {
+        console.error("Failed to title the conversation:", error);
+    }
+}
+
 export async function POST(req: Request) {
     const rejection = guardMutationRequest(req, true);
     if (rejection) return rejection;
@@ -138,7 +160,7 @@ export async function POST(req: Request) {
                     title: "New Chat",
                     systemPrompt: customSystemPrompt,
                     // H7: chat-started entry point can attach the new
-                    // conversation to a project/folder; ownership is verified
+                    // conversation to a project; ownership is verified
                     // inside createConversation.
                     projectId,
                 }
@@ -196,7 +218,13 @@ export async function POST(req: Request) {
             if (completionPersisted || privateMode || !conversationId) {
                 return;
             }
+            // Set before the write, not after: if the message row committed and
+            // the recency touch failed, a second attempt would store the reply
+            // twice. Losing a reply to a failed save is the lesser harm
+            // (route.test.ts pins this), and the response is already a 200
+            // stream, so nothing can be reported to the client.
             completionPersisted = true;
+            let saved = false;
             try {
                 await prisma.$transaction(async (tx) => {
                     await tx.message.create({
@@ -216,15 +244,16 @@ export async function POST(req: Request) {
                         data: { updatedAt: new Date() },
                     });
                 });
-
-                // Update conversation title if it's a new conversation
-                if (history.length === 0) {
-                    const title = generateTitleFromMessage(userMessage.content);
-                    await updateConversation(conversationId, userId, { title });
-                }
-            } catch (error) {
+                saved = true;
+            } catch (error: unknown) {
                 console.error("Failed to save messages:", error);
             }
+
+            // Titling is its own step with its own log line, but it still waits
+            // on a saved reply. It used to sit inside the write's try, so a
+            // failed rename was reported as "Failed to save messages" --
+            // pointing at the reply while the casualty was the title.
+            await titleFirstTurn(saved, history.length === 0, conversationId, userId, userMessage.content);
         };
 
         const startTime = Date.now();
