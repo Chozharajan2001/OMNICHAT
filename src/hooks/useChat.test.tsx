@@ -99,4 +99,23 @@ describe("useChat request transcript", () => {
         // message, so anything more here would be duplicated context.
         expect(body.conversationId).toBe("c-existing");
     });
+
+    it("targets the conversation the route segment names, not whatever the store still holds", async () => {
+        // /chat/[id] passes the URL's id while loadConversation() is still in
+        // flight. Reading the store only meant an early message went to the
+        // previously opened conversation -- or started a second one.
+        useChatStore.setState({ conversationId: "c-stale-from-previous-chat" });
+        const mock = captureFetch();
+        const { result } = renderHook(() => useChat({ conversationId: "c-from-url" }));
+
+        await act(async () => {
+            result.current.setInput("First message after opening the link");
+        });
+        await act(async () => {
+            await result.current.handleSubmit();
+        });
+        await waitFor(() => expect(mock).toHaveBeenCalled());
+
+        expect(readBody(mock).conversationId).toBe("c-from-url");
+    });
 });

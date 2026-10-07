@@ -49,8 +49,22 @@ function buildTranscript(messages: TranscriptMessage[], userMessage: string, pri
     ];
 }
 
+/**
+ * The route segment owns the conversation id on /chat/[id]; the store owns it on
+ * /chat. Reading only the store meant a message sent before loadConversation()
+ * resolved went to whichever conversation the store was still holding -- or
+ * started a second one -- while the URL said otherwise.
+ */
+function pickConversationId(
+    fromRoute: string | null | undefined,
+    fromStore: string | null
+): string | null {
+    return fromRoute ?? fromStore;
+}
+
 export function useChat(options: UseOmniChatOptions = {}) {
     const {
+        conversationId: conversationIdProp,
         projectId,
         systemPrompt,
         privateMode = false,
@@ -63,7 +77,7 @@ export function useChat(options: UseOmniChatOptions = {}) {
     const {
         providerId,
         modelId,
-        conversationId,
+        conversationId: storedConversationId,
         setConversationId,
         setConversationTitle,
         messages,
@@ -72,6 +86,11 @@ export function useChat(options: UseOmniChatOptions = {}) {
         removeMessage,
         updateMessage,
     } = useChatStore();
+
+    // The route segment owns the conversation id on /chat/[id]; the store owns
+    // it on /chat. handleSubmit's dependency list carries this value, so the
+    // closure is always current and no ref is needed to read it later.
+    const conversationId = pickConversationId(conversationIdProp, storedConversationId);
 
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
