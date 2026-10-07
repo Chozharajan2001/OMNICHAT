@@ -468,7 +468,7 @@ describe("findConversationCursor (2.5)", () => {
     it("resolves a cursor only against rows the caller owns", async () => {
         mockPrisma.conversation.findFirst.mockResolvedValueOnce({ id: "c-anchor" });
 
-        const cursor = await findConversationCursor("user-123", "c-anchor");
+        const cursor = await findConversationCursor("user-123", "c-anchor", false);
 
         expect(cursor).toEqual({ id: "c-anchor" });
         // Ownership lives in the lookup itself: a cursor naming someone else's
@@ -476,12 +476,13 @@ describe("findConversationCursor (2.5)", () => {
         expect(mockPrisma.conversation.findFirst.mock.calls[0][0].where).toEqual({
             userId: "user-123",
             id: "c-anchor",
+            archivedAt: null,
         });
     });
 
     it("resolves to null for a cursor that names no owned row", async () => {
         mockPrisma.conversation.findFirst.mockResolvedValueOnce(null);
 
-        await expect(findConversationCursor("user-123", "c-gone")).resolves.toBeNull();
+        await expect(findConversationCursor("user-123", "c-gone", true)).resolves.toBeNull();
     });
 });

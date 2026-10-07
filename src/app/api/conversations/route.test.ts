@@ -69,7 +69,7 @@ describe("GET /api/conversations cursor contract (2.5)", () => {
         const response = await GET(listRequest(`?cursorId=${OWNED_CURSOR}`));
 
         expect(response.status).toBe(400);
-        expect(findConversationCursor).toHaveBeenCalledWith(USER_ID, OWNED_CURSOR);
+        expect(findConversationCursor).toHaveBeenCalledWith(USER_ID, OWNED_CURSOR, false);
         expect(getConversations).not.toHaveBeenCalled();
     });
 

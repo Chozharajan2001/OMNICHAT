@@ -115,10 +115,14 @@ export async function getConversations(
  */
 export async function findConversationCursor(
     userId: string,
-    id: string
+    id: string,
+    archived: boolean
 ): Promise<{ id: string } | null> {
+    // The same membership rule as the listing itself: a cursor pointing at an
+    // archived row is not a position in the active list, and seeking from it
+    // shifts every boundary after it.
     const row = await prisma.conversation.findFirst({
-        where: { userId, id },
+        where: { userId, id, archivedAt: archived ? { not: null } : null },
         select: { id: true },
     });
     return row ? { id: row.id } : null;

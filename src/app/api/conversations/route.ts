@@ -32,11 +32,15 @@ type CursorParse = { ok: true; cursor?: { id: string } } | { ok: false };
  * conversations" and silently stops -- so the id is resolved to a row this user
  * owns before it is used.
  */
-async function readCursor(userId: string, raw: string | null): Promise<CursorParse> {
+async function readCursor(
+    userId: string,
+    raw: string | null,
+    archived: boolean
+): Promise<CursorParse> {
     if (!raw) return { ok: true };
     const parsed = z.string().cuid().safeParse(raw);
     if (!parsed.success) return { ok: false };
-    const cursor = await findConversationCursor(userId, parsed.data);
+    const cursor = await findConversationCursor(userId, parsed.data, archived);
     return cursor ? { ok: true, cursor } : { ok: false };
 }
 
@@ -62,7 +66,7 @@ export async function GET(req: Request) {
         
         const cursorId = searchParams.get("cursorId");
         const archived = searchParams.get("archived") === "true";
-        const parsedCursor = await readCursor(session.user.id, cursorId);
+        const parsedCursor = await readCursor(session.user.id, cursorId, archived);
 
         if (!parsedCursor.ok) {
             return NextResponse.json(
