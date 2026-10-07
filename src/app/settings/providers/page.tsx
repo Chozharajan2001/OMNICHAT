@@ -256,7 +256,7 @@ export default function ProvidersPage() {
             if (valid) {
                 success("Key verified", provider.name);
             } else {
-                toastError("Key rejected", `${provider.name} refused the stored key.`);
+                toastError("Key not confirmed", `${provider.name} did not confirm the stored key - it was rejected, or the check timed out.`);
             }
         } catch (err: unknown) {
             console.error(err);

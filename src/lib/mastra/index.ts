@@ -9,6 +9,7 @@
 // ────────────────────────────────────────────────────────────────
 
 import { generateText, LanguageModel } from "ai";
+import { KEY_VALIDATION_MAX_TOKENS, KEY_VALIDATION_TIMEOUT_MS } from "@/lib/constants";
 
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
@@ -100,10 +101,14 @@ export async function validateApiKey(
         const model = createLanguageModel(providerId, targetModel.id, apiKey);
 
         // Perform a tiny generate (no streaming) to verify credentials.
-        // We use a minimal prompt to minimise cost and latency.
+        // Bounded on purpose: this runs against someone's paid quota, and a
+        // hung provider would otherwise hold the request open. An aborted call
+        // lands in the catch below and reads as "not confirmed".
         await generateText({
             model,
             prompt: "Say 'ok'",
+            maxOutputTokens: KEY_VALIDATION_MAX_TOKENS,
+            abortSignal: AbortSignal.timeout(KEY_VALIDATION_TIMEOUT_MS),
         });
 
         return true;

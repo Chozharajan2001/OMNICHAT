@@ -33,6 +33,19 @@ export const DEFAULT_USER_PREFERENCES = {
 export const DEFAULT_WELCOME_MESSAGE = "What do you want to build, compare, or figure out today?";
 
 // ────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────
+// API key validation
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * Confirming a credential costs a real completion, so both its time and its
+ * output are bounded: the call previously had neither, meaning a stalled
+ * provider held a request open indefinitely and "Say 'ok'" was free to answer
+ * with a paragraph on the user's bill.
+ */
+export const KEY_VALIDATION_TIMEOUT_MS = 15_000;
+export const KEY_VALIDATION_MAX_TOKENS = 8;
+
 // Rate Limiting
 // ────────────────────────────────────────────────────────────────
 
