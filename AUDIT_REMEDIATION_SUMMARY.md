@@ -1149,9 +1149,11 @@ at 100 and the stream-failure marker reaching the error channel. Both are unit
 covered (a 150-message private session and a fabricated mid-stream failure),
 and the marker text is asserted byte-for-byte on the server side.
 
-Gate after this batch: `tsc` 0, `eslint` 0, quality 0 (165 files, 654 functions
-measured), **1064 tests / 43 files**. `next build` remains exit 1 for the
-recorded environmental reason.
+Gate after this batch, re-run at HEAD (`50631ab`, working tree clean):
+`tsc --noEmit --incremental false` 0, `eslint . --max-warnings 0` 0,
+`quality:check` 0 (165 files, 654 functions, maximum 29), `quality:test` 0,
+`db:drift-check` 0 (9/9 models, 11 indexes), **1064 tests / 43 files**.
+`next build` remains exit 1 for the recorded environmental reason.
 
 Still needing an order or an environment: the Phase 1 exit gate (`docker compose
 up` — no Docker daemon on this host), Phase 4 item 6 (tag `v0.1.0-rc1`, push,
