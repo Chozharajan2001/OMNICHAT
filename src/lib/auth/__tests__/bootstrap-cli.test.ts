@@ -27,6 +27,12 @@ describe("bootstrap CLI password rules match the auth policy", () => {
         expect(passwordRuleFailure("alllower1")).toMatch(/uppercase/);
         expect(passwordRuleFailure("NoDigits1".replace("1", ""))).toMatch(/digit/);
         expect(passwordRuleFailure("Ab1")).toMatch(/8 characters/);
+        // The caller prints "the password needs <this>", so every branch has to
+        // be a noun phrase. The empty case was "password is empty", which an
+        // operator read as "the password needs password is empty" while running
+        // the containerised runbook.
+        expect(passwordRuleFailure("")).toMatch(/non-empty/);
+        expect(passwordRuleFailure(null)).toMatch(/non-empty/);
     });
 });
 

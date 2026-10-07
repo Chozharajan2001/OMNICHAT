@@ -49,7 +49,10 @@ export function normalizeEmail(value) {
 
 /** Mirrors validatePasswordComplexity(); bootstrap-cli.test.ts pins the two together. */
 export function passwordRuleFailure(password) {
-    if (typeof password !== "string" || password.length === 0) return "password is empty";
+    // Every branch is a noun phrase, because the caller reads them as
+    // "the password needs <X>". "password is empty" was the one that made that
+    // sentence ungrammatical ("the password needs password is empty").
+    if (typeof password !== "string" || password.length === 0) return "a non-empty value";
     if (password.length < 8) return "at least 8 characters";
     if (Buffer.byteLength(password, "utf8") > 72) return "at most 72 bytes (bcrypt limit)";
     if (!/[A-Z]/.test(password)) return "an uppercase letter";
