@@ -9,6 +9,7 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { getServerSession } from "@/lib/auth/session";
 import { guardMutationRequest } from "@/lib/api/csrf";
+import { responseWithFailureNotice, streamFailureNotice } from "@/lib/api/chat-stream";
 import { getDecryptedKey } from "@/lib/db/queries/api-keys";
 import {
     createConversation,
@@ -229,6 +230,11 @@ export async function POST(req: Request) {
         };
 
         const startTime = Date.now();
+        // Filled by onError; read by the stream wrapper below. An object rather
+        // than a bare variable because the wrapper starts reading before the
+        // SDK has necessarily called back.
+        const streamFailure: { notice: string | null } = { notice: null };
+
         const result = streamText({
             model,
             messages: preparedMessages.map((m) => ({
@@ -264,10 +270,14 @@ export async function POST(req: Request) {
                 }
             },
 
-            // Provider/stream failure: the user message is already stored;
-            // surface the failure in logs (the stream client sees the error).
+            // Provider/stream failure: the user message is already stored. The
+            // text body is the only channel left once the response is 200, so
+            // the failure is rendered into it (see textStreamWithFailure) -- the
+            // old comment claimed "the stream client sees the error", which a
+            // real 401 proved false: the user got an empty reply and no message.
             onError: ({ error }) => {
                 console.error("Chat stream error:", error);
+                streamFailure.notice = streamFailureNotice(error);
             },
         });
 
@@ -278,12 +288,15 @@ export async function POST(req: Request) {
             60
         );
 
-        return result.toTextStreamResponse({
-            headers: {
-                ...(privateMode ? {} : { "X-Conversation-Id": conversationId! }),
-                ...rateLimitHeaders,
-            },
-        });
+        return responseWithFailureNotice(
+            result.toTextStreamResponse({
+                headers: {
+                    ...(privateMode ? {} : { "X-Conversation-Id": conversationId! }),
+                    ...rateLimitHeaders,
+                },
+            }),
+            streamFailure
+        );
     } catch (error: unknown) {
         if (isRateLimitBackendUnavailableError(error)) {
             return NextResponse.json({ error: "Service unavailable" }, { status: 503 });
