@@ -39,5 +39,18 @@ export function useApiKeys() {
         await fetchKeys();
     };
 
-    return { keys, loading, error, addKey, removeKey, refresh: fetchKeys };
+    // Re-checks the credential already in the vault. The key itself never goes
+    // back and forth over this call: only the verdict comes home.
+    const validateKey = async (providerId: string): Promise<boolean> => {
+        const res = await fetch(`/api/api-keys/${providerId}/validate`, { method: "POST" });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || "Failed to validate API key");
+        }
+        const data = await res.json();
+        await fetchKeys();
+        return Boolean(data.valid);
+    };
+
+    return { keys, loading, error, addKey, removeKey, validateKey, refresh: fetchKeys };
 }

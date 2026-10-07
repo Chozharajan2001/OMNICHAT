@@ -62,11 +62,25 @@ export type ChatRequest = z.infer<typeof chatRequestSchema>;
 /* ────────────────────────────────────────────────────────────────
    API key save (POST /api/api-keys)
    ──────────────────────────────────────────────────────────────── */
-export const saveKeySchema = z.object({
-    providerId: z.string().min(1),
-    apiKey: z.string().min(10).max(500),
-    validate: z.boolean().optional().default(true),
-});
+export const saveKeySchema = z
+    .object({
+        providerId: z.string().min(1),
+        apiKey: z.string().min(10).max(500),
+        validate: z.boolean().optional().default(true),
+    })
+    // A credential stored against a provider id that is not in the registry is
+    // invisible: the providers list renders only known providers, so the row is
+    // counted and encrypted but never shown or removable from the UI, and no chat
+    // can ever select it.
+    .superRefine((value, ctx) => {
+        if (!getProvider(value.providerId)) {
+            ctx.addIssue({
+                code: "custom",
+                path: ["providerId"],
+                message: `Unknown provider: ${value.providerId}`,
+            });
+        }
+    });
 
 export type SaveKeyRequest = z.infer<typeof saveKeySchema>;
 
