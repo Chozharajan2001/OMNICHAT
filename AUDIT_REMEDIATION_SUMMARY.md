@@ -795,3 +795,107 @@ conversation, 14 seeded messages, one project) was deleted afterwards; the local
 *Branch: master*
 *Commits: 81 including this one*
 *Tests: 989 passing across 32 files*
+
+## Phase 9: Host-Readiness Remediation (October 7, 2026)
+
+Scope: the externally supplied "Complete Feature Audit" plus its five-phase
+execution plan, worked on branch `release/host-readiness`. Every audit claim was
+treated as a lead and re-checked against source or measurement before anything
+was changed. Two of them did not survive that check, and one claim of my own had
+to be corrected mid-phase.
+
+### Commits
+
+| Task | Commit | What it fixes |
+|------|--------|---------------|
+| 1.1, 1.4 | `eaa9090` | `APP_ORIGIN` wired into both compose stacks and `render.yaml`; Render's hardcoded `omnichat.onrender.com` replaced with a non-synced var |
+| 2.1 | `c03554a` | Private-chat turns send the whole transcript instead of the last message |
+| (gate honesty) | `c0a00d5` | Corrects `c03554a`, which shipped while `typecheck` and `lint` were failing |
+| 2.2 | `72c29af` | The chat hook honours the conversation id from the URL, not just the store |
+| 2.3 | `7e28465` | An unknown `conversationId` is a 404, never a silent new chat |
+| 2.4 | `4172918` | An unknown provider/model pair is a 400, not a 500 |
+| 2.5 | `964dd58` | Conversation cursors that cannot repeat, skip, or silently end the list |
+
+### Measured, not assumed
+
+* **Gate reporting (my own error).** `pnpm typecheck 2>&1 | tail -2; echo "TC:$?"`
+  prints the status of `tail`, not of `tsc`. Commit `c03554a` was made under that
+  illusion while typecheck exited 2 and lint exited 1; it is corrected in
+  `c0a00d5`, and every gate since is run as `cmd > file 2>&1; echo $?` against
+  the file it wrote.
+* **2.5 cursor behaviour** was established by running the real query function
+  against a copy of the SQLite database, not by reading Prisma documentation:
+  * a garbage `cursorUpdatedAt` raised `PrismaClientValidationError` (the old
+    handler answered it as a 500);
+  * `cursorId` without `cursorUpdatedAt` built no cursor, so the client was
+    handed page one again and paged it forever;
+  * a cursor naming a nonexistent or foreign row raises **nothing** -- it seeks
+    to an empty page with no `nextCursor`, which a client reads as "end of
+    list", so the id is now resolved against the caller's own rows first;
+  * Prisma seeks **inclusive** of the cursor row, which is why `nextCursor` is
+    the popped lookahead row and why no `skip` may accompany it (adding
+    `skip: 1` to that pairing silently drops one conversation per page);
+  * a walk that only ever feeds `nextCursor` back as `cursorId` paged 8, 9 and
+    12 fully-tied rows at limits 2, 3 and 4 with zero duplicates and zero
+    losses.
+* **2.6 CSRF** was answered with a headless-Chromium probe rather than by
+  trusting either the audit or the Fetch spec. On a same-origin page, real
+  Chrome sends `Origin` on POST, PATCH and **DELETE** (`Sec-Fetch-Site:
+  same-origin`), and sends none on GET. The audit's premise -- that sidebar and
+  API-key fetches "send no `Origin`" and would therefore be refused by the exact
+  match in `csrf.ts` -- is false for browsers, so no client change was made.
+  The remaining exposure is configuration: `APP_ORIGIN` must equal the origin
+  the browser actually loaded, which is what 1.1 wires and `.env.example`
+  documents.
+
+### Audit claims that did not survive verification
+
+* *"Unknown provider/model -> 500" was traced to `mastra/index.ts:66-70`.* The
+  500 was real; the fix location is not. It is now refused at the schema
+  boundary, which every consumer of `chatRequestSchema` inherits, and the
+  provider id short-circuits so an unknown provider does not also report its
+  models as unknown.
+* *"Ordering on `updatedAt` alone repeats or skips rows at a tie."* It did not
+  on this engine (see the walk above). The id tiebreaker is kept -- SQL leaves
+  the relative order of tied rows to the engine, and a page boundary should not
+  depend on that -- but it is recorded as determinism insurance, not as a
+  reproduced-duplicate fix.
+* *"Prisma answers an unknown cursor with P2023."* It does not, here. A draft
+  that mapped that code to a 400 was dead code and was replaced by the
+  ownership lookup.
+
+### Not verified
+
+* **The Phase 1 exit gate is not run.** No live `docker compose up` of either
+  stack: the Docker daemon is not available on this machine. The compose
+  findings themselves also stand corrected against the audit: both stacks
+  already carry a one-shot `migrate` service and `RATE_LIMIT_BACKEND=memory`;
+  the gaps it describes are specific to Railway and Render, and
+  `railway.json` cannot express environment variables at all.
+* **`next build` is not green in this environment.** It compiles and generates
+  all 25 pages, then fails copying `@libsql/darwin-arm64` into
+  `.next/standalone` -- an optional macOS native binding that is not installed
+  on this Windows box (only `@libsql/win32-x64-msvc` is present). `src/lib/db/prisma.ts`
+  is the only file in the repository that imports libsql and no commit in this
+  phase adds a dependency edge, so the step is environmental -- but it is
+  reported as not-proven rather than as passing.
+
+### End-of-phase gate (measured)
+
+```
+tsc --noEmit                    exit 0
+eslint . --max-warnings 0       exit 0
+node scripts/quality/check.mjs  exit 0   Quality: 152 files, 0 errors, 0 warnings
+vitest run                      exit 0   34 files passed, 1006 tests passed
+next build                      exit 1   standalone copy step (environmental)
+```
+
+Phase 3 and Phase 4 of the plan are untouched. Tasks 2.1-2.6 are complete, so
+the Phase 2 exit gate (tests plus targeted new tests, all green) is met.
+**Push, tagging, opening the PR and deploying remain owner decisions.**
+
+---
+
+*Updated October 7, 2026 (Phase 9)*
+*Branch: release/host-readiness*
+*Tests: 1006 passing across 34 files*
