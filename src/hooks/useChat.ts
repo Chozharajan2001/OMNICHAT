@@ -8,6 +8,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useChatStore, type Message } from "@/stores/chat-store";
+import { CHAT_MAX_REQUEST_MESSAGES, STREAM_ERROR_MARKER } from "@/lib/constants";
 
 interface UseOmniChatOptions {
     conversationId?: string | null;
@@ -41,12 +42,33 @@ interface TranscriptMessage {
  */
 function buildTranscript(messages: TranscriptMessage[], userMessage: string, privateMode: boolean): TranscriptMessage[] {
     if (!privateMode) return [{ role: "user", content: userMessage }];
+    // Newest wins: the request schema rejects the whole array past
+    // CHAT_MAX_REQUEST_MESSAGES, so an unbounded transcript does not grow
+    // forever -- at turn ~100 every send starts failing with a 400 and the
+    // private chat becomes unusable mid-session. Room is left for the message
+    // being added now.
     return [
         ...messages
             .filter((message) => message.content.trim() !== "")
+            .slice(-(CHAT_MAX_REQUEST_MESSAGES - 1))
             .map((message) => ({ role: message.role, content: message.content })),
         { role: "user", content: userMessage },
     ];
+}
+
+/**
+ * The route appends a stream failure after this marker. It belongs in the error
+ * channel, not in the assistant message: kept as message text it would be shown
+ * as though the model wrote it and, in private mode, replayed to the provider on
+ * every later turn.
+ */
+function splitStreamNotice(text: string): { answer: string; notice: string | null } {
+    const at = text.indexOf(STREAM_ERROR_MARKER);
+    if (at < 0) return { answer: text, notice: null };
+    return {
+        answer: text.slice(0, at).trimEnd(),
+        notice: text.slice(at + STREAM_ERROR_MARKER.length).trim(),
+    };
 }
 
 /**
@@ -199,20 +221,28 @@ export function useChat(options: UseOmniChatOptions = {}) {
                     // user switched conversations mid-stream the message is
                     // gone and the update is a safe no-op instead of
                     // overwriting another conversation's last message.
-                    updateMessage(assistantMsgId, accumulatedContent);
+                    // The marker and whatever follows it are never shown as
+                    // answer text, so they cannot flash before the split below.
+                    updateMessage(assistantMsgId, splitStreamNotice(accumulatedContent).answer);
                 }
 
-                // Update with final content
-                updateMessage(assistantMsgId, accumulatedContent);
+                // Final pass: the answer and an appended stream failure are
+                // different things and belong in different channels -- the
+                // message body and the error banner.
+                const { answer, notice } = splitStreamNotice(accumulatedContent);
+                updateMessage(assistantMsgId, answer);
+                setError(notice);
 
                 if (newConversationId && !privateMode) {
                     onComplete?.(newConversationId);
                 }
             } catch (err: unknown) {
                 if (err instanceof Error && err.name === "AbortError") {
-                    // User cancelled the request
-                    // If there's partial content, keep it; otherwise remove the empty message
-                    if (accumulatedContentRef.current.trim() === "" && currentAssistantMsgIdRef.current) {
+                    // User cancelled the request. Keep the partial answer; drop
+                    // the empty message -- where "empty" means no answer text,
+                    // ignoring a notice that may have arrived with the abort.
+                    if (splitStreamNotice(accumulatedContentRef.current).answer.trim() === ""
+                        && currentAssistantMsgIdRef.current) {
                         removeMessage(currentAssistantMsgIdRef.current);
                     }
                     return;

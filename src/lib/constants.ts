@@ -34,6 +34,24 @@ export const DEFAULT_WELCOME_MESSAGE = "What do you want to build, compare, or f
 
 // ────────────────────────────────────────────────────────────────
 // ────────────────────────────────────────────────────────────────
+// Chat requests
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * Ceiling on the message array of one chat request. Shared by the schema that
+ * enforces it and the client that builds a private transcript, so the two cannot
+ * disagree about when a request starts dying.
+ */
+export const CHAT_MAX_REQUEST_MESSAGES = 100;
+
+/**
+ * Separates an appended stream failure from the answer that precedes it.
+ * Both ends read this from one place: the route writes it, the client strips
+ * it before the text becomes assistant history.
+ */
+export const STREAM_ERROR_MARKER = "[[omnichat:stream-error]]";
+
+// ────────────────────────────────────────────────────────────────
 // API key validation
 // ────────────────────────────────────────────────────────────────
 

@@ -140,4 +140,46 @@ describe("useChat request transcript", () => {
         expect(onComplete).toHaveBeenCalledWith("c-brand-new");
         expect(useChatStore.getState().conversationId).toBe("c-brand-new");
     });
+
+    it("keeps a long private chat sendable instead of failing at turn 100", async () => {
+        // The request schema rejects the array past CHAT_MAX_REQUEST_MESSAGES.
+        // Sending the whole store meant that from around turn 100 every send in
+        // a long private session answered 400 and the chat was dead mid-session.
+        const long = Array.from({ length: 150 }, (_, i) => ({
+            id: `m${i}`,
+            role: (i % 2 === 0 ? "user" : "assistant") as "user" | "assistant",
+            content: `message ${i}`,
+            createdAt: "2026-10-05T08:00:00.000Z",
+        }));
+        useChatStore.setState({ messages: long });
+        const body = await submitWith(true);
+
+        expect(body.messages.length).toBe(100);
+        expect(body.messages[body.messages.length - 1].content).toBe("Summarise this thread");
+        // newest-first slice: the oldest thing sent is the 51st stored message
+        expect(body.messages[0].content).toBe("message 51");
+    });
+
+    it("routes an appended stream failure to the error channel, not the answer", async () => {
+        useChatStore.setState({ messages: [] });
+        vi.stubGlobal("fetch", vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
+            async () => new Response(
+                "the real answer\n\n[[omnichat:stream-error]]\nThe provider rejected your API key.",
+                { status: 200 }
+            )
+        ));
+        const { result } = renderHook(() => useChat({ privateMode: true }));
+
+        await act(async () => {
+            result.current.setInput("ask");
+        });
+        await act(async () => {
+            await result.current.handleSubmit();
+        });
+        await waitFor(() => expect(result.current.error).toBeTruthy());
+
+        const assistant = useChatStore.getState().messages.at(-1);
+        expect(assistant?.content).toBe("the real answer");
+        expect(result.current.error).toBe("The provider rejected your API key.");
+    });
 });

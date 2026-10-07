@@ -9,7 +9,12 @@
  * logging it. Measured against a real 401 from OpenAI, the user saw an empty
  * reply and no message at all. The failure is therefore appended to the body the
  * composer prints, in the app's own words.
+ *
+ * It is appended behind a marker so the client can separate an answer from an
+ * appended failure: without it the notice would be stored as assistant output
+ * and replayed to the provider on the next private turn.
  */
+import { STREAM_ERROR_MARKER } from "@/lib/constants";
 export function streamFailureNotice(error: unknown): string {
     const status = (error as { statusCode?: unknown })?.statusCode;
     if (status === 401 || status === 403) {
@@ -53,7 +58,9 @@ export function responseWithFailureNotice(
                 if (!failure.notice) return;
                 // Separated from the answer when there is one, and standing
                 // alone when the turn produced nothing at all.
-                controller.enqueue(encoder.encode(`${received > 0 ? "\n\n" : ""}${failure.notice}`));
+                controller.enqueue(
+                    encoder.encode(`${received > 0 ? "\n\n" : ""}${STREAM_ERROR_MARKER}\n${failure.notice}`)
+                );
             },
         })
     );

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { STREAM_ERROR_MARKER } from "@/lib/constants";
 import { responseWithFailureNotice, streamFailureNotice } from "./chat-stream";
 
 function textResponse(body: string, init?: ResponseInit): Response {
@@ -51,7 +52,9 @@ describe("responseWithFailureNotice", () => {
 
         const text = await responseWithFailureNotice(textResponse("partial "), failure).text();
 
-        expect(text).toBe("partial \n\nThe provider rejected your API key.");
+        // The marker is what lets the client tell "the model said this" from
+        // "the transport failed here"; without it the notice reads as answer text.
+        expect(text).toBe(`partial \n\n${STREAM_ERROR_MARKER}\nThe provider rejected your API key.`);
     });
 
     it("stands alone when nothing was received", async () => {
@@ -59,7 +62,7 @@ describe("responseWithFailureNotice", () => {
 
         const text = await responseWithFailureNotice(textResponse(""), failure).text();
 
-        expect(text).toBe("The provider is rate limiting this key.");
+        expect(text).toBe(`${STREAM_ERROR_MARKER}\nThe provider is rate limiting this key.`);
     });
 
     it("keeps the SDK's status and headers on the replaced response", () => {

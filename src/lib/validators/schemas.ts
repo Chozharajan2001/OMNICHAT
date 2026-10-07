@@ -7,6 +7,7 @@
 
 import { z } from "zod";
 import { getModel, getProvider } from "@/lib/mastra/providers";
+import { CHAT_MAX_REQUEST_MESSAGES } from "@/lib/constants";
 
 /* ────────────────────────────────────────────────────────────────
    Chat request (POST /api/chat)
@@ -21,7 +22,7 @@ export const chatRequestSchema = z
                 })
             )
             .min(1)
-            .max(100), // Limit message array to 100 messages per request
+            .max(CHAT_MAX_REQUEST_MESSAGES),
         providerId: z.string().min(1).max(64),
         modelId: z.string().min(1).max(200),
         conversationId: z.string().cuid().nullable().optional(),
