@@ -110,14 +110,16 @@ export function ConversationSidebar() {
                 method: "DELETE",
             });
 
-            if (response.ok) {
-                setConversations((prev) => prev.filter((conversation) => conversation.id !== id));
-                if (conversationId === id) {
-                    clearMessages();
-                    router.push("/chat");
-                }
-                success("Conversation deleted");
+            if (!response.ok) {
+                throw new Error(`Delete rejected with ${response.status}`);
             }
+
+            setConversations((prev) => prev.filter((conversation) => conversation.id !== id));
+            if (conversationId === id) {
+                clearMessages();
+                router.push("/chat");
+            }
+            success("Conversation deleted");
         } catch (error) {
             console.error("Failed to delete conversation:", error);
             toastError("Delete failed");
@@ -137,14 +139,16 @@ export function ConversationSidebar() {
                 body: JSON.stringify({ archived: true }),
             });
 
-            if (response.ok) {
-                setConversations((prev) => prev.filter((conversation) => conversation.id !== id));
-                if (conversationId === id) {
-                    clearMessages();
-                    router.push("/chat");
-                }
-                success("Conversation archived");
+            if (!response.ok) {
+                throw new Error(`Archive rejected with ${response.status}`);
             }
+
+            setConversations((prev) => prev.filter((conversation) => conversation.id !== id));
+            if (conversationId === id) {
+                clearMessages();
+                router.push("/chat");
+            }
+            success("Conversation archived");
         } catch (error) {
             console.error("Failed to archive conversation:", error);
             toastError("Archive failed");
