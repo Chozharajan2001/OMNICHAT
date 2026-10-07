@@ -1292,8 +1292,44 @@ because `openapi-contract.test.ts` checks paths and methods, not examples
 
 Gates after this phase: `tsc` 0, `quality:check` 0, openapi contract 28/28.
 
+### Phase 2's own verify steps, run against the booted image
+
+The plan's Phase 2 checks were written as API behaviours and had only been
+proven by unit tests. They were executed against the running container with 65
+seeded conversations:
+
+* **2.5 cursor paging** -- `?limit=20` walked **4 pages, 65 conversations, 65
+  distinct ids, `updatedAt` non-increasing**: no duplicates and no skips, which
+  is the plan's exact wording. `?cursorId=definitely-not-a-cursor` →
+  **400 `Invalid cursor`**, not 500. A cursor taken from the archived list was
+  **400 on the active list** and **200 on its own list** -- the ownership rule
+  from `74b6fc0`, observed rather than asserted.
+* **2.4 bogus provider/model pair** → **400** before any SDK call.
+* **2.3 unknown conversation id** -- only half reachable here: with no stored
+  API key the request stops at the key check (400 "No API key configured"), so
+  the 404 could not be observed on this container. The silent fork was still
+  disproven by evidence: the list count went **65 → 65** across the attempt and
+  a direct `GET /api/conversations/<that id>` answers **404**, so nothing was
+  created. The 404 response itself stays unit-covered until a key exists.
+
+**Two probe errors worth recording, because the first one looks exactly like a
+product bug.** The query parameter is `cursorId`, not `cursor`, and the response
+carries `nextCursor` as an **object** `{id}` rather than a string. Sending
+`cursor=<the object>` is simply ignored, so the server hands back page one every
+time -- 12 identical pages and 20 distinct ids, which reads as "pagination is
+broken" until the names are checked. The route comment at
+`src/app/api/conversations/route.ts:24-31` already documents that
+param-mismatch failure mode; the probe walked into it anyway. Also: an in-page
+script that submits the login form and then keeps fetching dies with
+"Failed to fetch", because the redirect replaces the document -- sign in first,
+audit in the next call.
+
+Found while running the runbook and fixed in `0c4b63d`: an empty password made
+`users:add` print "the password needs password is empty."
+
 ---
 
 *Updated October 7, 2026 (Phase 13)*
 *Branch: release/host-readiness*
+*Phase 2's verify steps were executed on the production image; 2.3's 404 response remains unit-covered (no API key on the test container)*
 *Plan status: Phases 0-4 complete except item 6 (tag/push/PR); Phase 5 is post-host by design*
