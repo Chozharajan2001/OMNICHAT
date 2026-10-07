@@ -283,7 +283,14 @@ owns. Fill both in Render's dashboard.
 **3. Two defaults refuse to work off localhost.** `NEXTAUTH_URL` defaults to
 `http://localhost:3000`, so sign-in redirects back to the visitor's own machine;
 `APP_ORIGIN` is what the CSRF guard compares the browser's `Origin` against, and
-a mismatch answers every mutation 403. Set both to the public URL. Separately,
+a mismatch answers every mutation 403. Set both to the public URL. The symptom of
+a wrong `APP_ORIGIN` is easy to misread: sign-in still succeeds and reads still
+return, because only mutating methods are compared — the app loads and looks
+healthy, and nothing saves. Measured on the built image with the guard set to a
+foreign origin: `POST /api/conversations`, `PATCH /api/preferences`,
+`POST /api/api-keys` and `DELETE /api/conversations` all answered
+`403 {"error":"Forbidden"}` while `GET /api/conversations` and
+`GET /api/preferences` stayed `200`. Separately,
 production resolves the rate limiter to `redis-rest`, which **fails closed**
 without Upstash credentials — that shows up as `CredentialsSignin` on every
 login attempt. One container is safe on `memory`.

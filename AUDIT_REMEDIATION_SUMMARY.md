@@ -1220,6 +1220,7 @@ outside the browser, an unauthenticated foreign-`Origin` POST is answered
 **401** because the session check precedes the origin check, and the httpOnly
 session cookie cannot be lifted from the page to replay a foreign origin. That
 branch remains covered by `src/app/api/mutations.test.ts`.
+*(Superseded by Phase 16, which reached the 403 live from inside the browser.)*
 
 **The platform one-off, also run.** `README:249-258` tells a Railway or Render
 operator to `docker build --target migrate` and `docker run --rm -e
@@ -1408,7 +1409,49 @@ and volumes removed, Docker Desktop closed.
 
 ---
 
-*Updated October 7, 2026 (Phase 15)*
+## Phase 16: The CSRF 403 branch, reached live (October 7, 2026)
+
+Phases 12 and 13 both had to write "the 403 is unit-covered but not observed",
+because from a logged-out position the session check answers first and the
+httpOnly cookie cannot leave the browser. The way through was not to forge a
+request but to **misconfigure the server** and act from inside a real, signed-in
+page: the sqlite stack booted with `APP_ORIGIN=https://omnichat.example.test`
+while `NEXTAUTH_URL` stayed `http://localhost:3000`, and the browser visited
+localhost.
+
+Signed in as that origin, six calls from the page:
+
+| Call | Result |
+|---|---|
+| `POST /api/conversations` | **403** `{"error":"Forbidden"}` |
+| `PATCH /api/preferences` | **403** |
+| `POST /api/api-keys` | **403** |
+| `DELETE /api/conversations` | **403** |
+| `GET /api/conversations` | 200 `{"conversations":[],"nextCursor":null}` |
+| `GET /api/preferences` | 200 `{"preferences":null}` |
+
+What that establishes, beyond the 403 itself:
+
+* **the guard is alive in the production bundle**, not just in tests, and it is
+  the `Origin` comparison rather than authentication that refuses -- the session
+  was valid;
+* **only mutating methods are compared.** Sign-in succeeded, the page rendered,
+  and reads returned normally, so a wrong `APP_ORIGIN` looks like "everything
+  loads, nothing saves". That is the shape of the failure an operator actually
+  sees, and README item 3 now says so with the measured matrix;
+* **`NEXTAUTH_URL` and `APP_ORIGIN` do different jobs** and cannot substitute for
+  one another, which is the whole reason both are `sync: false` in `render.yaml`;
+* `/api/health` still answered `200 healthy` (`database:up, encryption:up`) with
+  a foreign `APP_ORIGIN`, so health is not an origin check and cannot be relied
+  on to catch this misconfiguration.
+
+Stack torn down (`down -v`), volume, account and generated secrets removed,
+Docker Desktop closed. No source changed in this phase; README item 3 and this
+record are the deliverables.
+
+---
+
+*Updated October 7, 2026 (Phase 16)*
 *Branch: release/host-readiness*
-*1.2 verified live; 2.1's live half and the provider-success path still need a real key*
+*CSRF 403 observed live; mutation-only comparison and the NEXTAUTH_URL/APP_ORIGIN split recorded in README*
 *Plan status: Phases 0-4 complete except item 6 (tag/push/PR, an owner order); Phase 5 is post-host by design*
