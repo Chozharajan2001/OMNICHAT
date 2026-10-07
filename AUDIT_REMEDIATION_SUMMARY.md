@@ -1119,13 +1119,35 @@ file in that build graph was touched on this branch. An
 `outputFileTracingExcludes` entry was tried against it, measured as not
 suppressing the copies, and removed rather than left as dead config.
 
-**Verification, stated as it is.** The three client fixes carry unit tests
-(jsdom and node projects). They were not re-walked in a live browser this
-round. What the clicks show: opening a saved conversation then flipping Private
-on empties the transcript, and the next private request carries only the new
-message; a preferences row with an unknown model opens with no "Unsaved
-changes" label and Save disabled; `PATCH /api/preferences {"defaultModelId":
-"gpt-4o"}` returns 400 naming `defaultProviderId`.
+**Verification, stated as it is.** All three client fixes were then walked in a
+real browser against `next dev` (a throwaway account, seeded conversation and
+all rows removed afterwards; the server was stopped once done):
+
+* private mode over a loaded conversation -- after the toggle the main column
+  shows the welcome panel and the private banner, and the request the composer
+  put on the wire carried `messages.length === 1`, `privateMode: true`,
+  `conversationId: null`. Before the change it would have carried the saved
+  thread's two messages as well. (Captured by wrapping `window.fetch` in-page;
+  the sidebar's "Order 4471" line is a list snippet, not transcript text.)
+* preferences with an unresolvable stored model (`gpt-3.5-turbo-instruct`
+  written straight to `user_preferences`, since the API now refuses to save
+  such a pair) -- the Model picker shows `GPT‑4o`, no "Unsaved changes" label,
+  Save disabled. The same row made the pre-change code report a difference the
+  user could not see; the new test failed before the fix for that reason.
+* `PATCH /api/preferences` in-page, six bodies: model alone **400**, provider
+  alone **400**, known provider + unknown model **400**, unknown provider +
+  model **400**, valid pair **200**, `{"theme":"dark"}` alone **200**. The 400
+  bodies read `Invalid request` -- the field path the schema chose
+  (`defaultProviderId` vs `defaultModelId`) stays in the server-side Zod error
+  and is not sent to the client, which is the sanitisation policy working as
+  intended, not a gap. Earlier text in this section claimed the response named
+  the missing field; it does not, and that was corrected here rather than left
+  in place.
+
+Not verified live, because it needs a provider round trip: the transcript cap
+at 100 and the stream-failure marker reaching the error channel. Both are unit
+covered (a 150-message private session and a fabricated mid-stream failure),
+and the marker text is asserted byte-for-byte on the server side.
 
 Gate after this batch: `tsc` 0, `eslint` 0, quality 0 (165 files, 654 functions
 measured), **1064 tests / 43 files**. `next build` remains exit 1 for the
