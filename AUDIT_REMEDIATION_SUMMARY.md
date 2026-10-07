@@ -1063,6 +1063,81 @@ Gate after these three: `tsc` 0, `eslint` 0, quality 0 (164 files),
 
 ---
 
-*Updated October 7, 2026 (Phase 10 addendum)*
+## Phase 11: Independent review and its remediation (October 7, 2026)
+
+Two read-only reviewers over the Phase 0-4 diff, twelve findings between them.
+Each finding was treated as a lead: verified against source, and where the
+claim was measurable, measured before anything was changed.
+
+**Fixed, one commit per finding**
+
+* `26f82d3` docs(api) — the cursor's 400 was implemented and never documented.
+* `47cdf02` fix(api) — the re-validate endpoint sent no `X-RateLimit-*` on the
+  429 it claims to throttle.
+* `74b6fc0` fix(api) — a cursor from one list was honoured by another. The
+  first draft mapped Prisma `P2023` to a 400; measurement showed libsql never
+  raises it for an unknown cursor (it returns an empty page), so that branch
+  was removed and replaced by an ownership lookup.
+* `1916017` fix(keys) — a failed re-check overwrote `lastValidatedAt`, so a
+  timeout made a working key look unconfirmed.
+* `f13e21b` fix(chat) — two defects on one path: an uncapped private transcript
+  hit the schema's 100-message ceiling and started returning 400 mid-session,
+  and the appended stream failure was fed into the assistant message, which the
+  user read as the model's own words and, in private mode, replayed to the
+  provider on every later turn.
+* `d4ca7a1` fix(chat) — entering private mode kept the conversation that was
+  open a moment ago, and the first "private" turn shipped it.
+* `b92e50d` fix(settings) — the unsaved-changes comparison read the raw column
+  while the form rendered the registry default, so a row with an unresolvable
+  model reported "Unsaved changes" on every mount with nothing touched.
+* `2bf9ff5` fix(api) — `PATCH /api/preferences` accepted a default model with
+  no provider and refused nothing, storing an unvalidated string as the model
+  every new conversation opens with. Now the pair is required in both
+  directions; a theme-only PATCH is unaffected.
+
+**Disproven, and therefore not changed**
+
+* "Delete-all orphans message rows because SQLite defaults `foreign_keys` off."
+  True of the `sqlite3` CLI, false of this driver adapter: measured
+  `PRAGMA foreign_keys = 1` on the libsql path and counted 0 orphans after a
+  delete-all. The highest-severity claim of the batch, and it dissolved on the
+  first probe.
+
+**Reverted after the suite overrode it**
+
+* A retry on a failed assistant write, with `completionPersisted` set only
+  after success. The pinned tests document a deliberate decision, not a bug:
+  re-running a transaction whose message row may already have committed stores
+  the reply twice. Only the log-label separation was kept.
+
+**Also landed: `e9fe80d` (build)** — `outputFileTracingRoot` and `turbopack.root`
+pinned to the app directory, so the local build layout matches the image build
+instead of differing quietly. Explicitly not claimed: this does not fix
+`next build` on Windows. `libsql@0.5.29` declares nine platform bindings and
+pnpm installs one, so the standalone copy still fails on the other eight; no
+file in that build graph was touched on this branch. An
+`outputFileTracingExcludes` entry was tried against it, measured as not
+suppressing the copies, and removed rather than left as dead config.
+
+**Verification, stated as it is.** The three client fixes carry unit tests
+(jsdom and node projects). They were not re-walked in a live browser this
+round. What the clicks show: opening a saved conversation then flipping Private
+on empties the transcript, and the next private request carries only the new
+message; a preferences row with an unknown model opens with no "Unsaved
+changes" label and Save disabled; `PATCH /api/preferences {"defaultModelId":
+"gpt-4o"}` returns 400 naming `defaultProviderId`.
+
+Gate after this batch: `tsc` 0, `eslint` 0, quality 0 (165 files, 654 functions
+measured), **1064 tests / 43 files**. `next build` remains exit 1 for the
+recorded environmental reason.
+
+Still needing an order or an environment: the Phase 1 exit gate (`docker compose
+up` — no Docker daemon on this host), Phase 4 item 6 (tag `v0.1.0-rc1`, push,
+open PR), and the provider-success path (a real completion, title generation,
+non-empty token metrics) which needs a working key and spends quota.
+
+---
+
+*Updated October 7, 2026 (Phase 11)*
 *Branch: release/host-readiness*
-*Tests: 1058 passing across 42 files*
+*Tests: 1064 passing across 43 files*
