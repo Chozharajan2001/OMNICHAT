@@ -114,10 +114,23 @@ describe("ChatInput", () => {
         expect(textarea.hasAttribute("disabled")).toBe(true);
     });
 
-    it("disables textarea when isLoading is true", () => {
+    // Plan 3.2: the composer used to lock for the whole reply, so drafting the
+    // next message meant waiting (and losing selection/IME state). Sending stays
+    // withheld by the hook's isLoading guard, which is the single source of
+    // truth; the component's job is to keep typing possible and say plainly that
+    // Enter will not go through yet.
+    it("keeps the composer editable while a reply streams", () => {
         render(<ChatInput {...defaultProps} isLoading={true} />);
         const textarea = screen.getByLabelText("Type your message");
-        expect(textarea.hasAttribute("disabled")).toBe(true);
+        expect(textarea.hasAttribute("disabled")).toBe(false);
+
+        fireEvent.change(textarea, { target: { value: "next question" } });
+        expect(defaultProps.onChange).toHaveBeenCalled();
+    });
+
+    it("still honours an external disable while loading", () => {
+        render(<ChatInput {...defaultProps} isLoading={true} disabled={true} />);
+        expect(screen.getByLabelText("Type your message").hasAttribute("disabled")).toBe(true);
     });
 
     it("shows 'Enter to send' hint when sendWithEnter is true", () => {
@@ -128,5 +141,11 @@ describe("ChatInput", () => {
     it("shows 'Ctrl/Cmd+Enter to send' hint when sendWithEnter is false", () => {
         render(<ChatInput {...defaultProps} sendWithEnter={false} />);
         expect(screen.getByText("Ctrl/Cmd+Enter to send")).toBeDefined();
+    });
+
+    it("replaces the send hint while a reply streams", () => {
+        render(<ChatInput {...defaultProps} isLoading={true} sendWithEnter={true} />);
+        expect(screen.getByText("Finish or stop this reply to send the next one")).toBeDefined();
+        expect(screen.queryByText("Enter to send")).toBeNull();
     });
 });

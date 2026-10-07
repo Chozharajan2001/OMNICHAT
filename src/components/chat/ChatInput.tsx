@@ -49,7 +49,11 @@ export function ChatInput({
                         <div className="mb-2 flex items-center justify-between px-1">
                             <span className="section-kicker">Prompt composer</span>
                             <span className="text-xs text-muted-foreground">
-                                {sendWithEnter ? "Enter to send" : "Ctrl/Cmd+Enter to send"}
+                                {isLoading
+                                    ? "Finish or stop this reply to send the next one"
+                                    : sendWithEnter
+                                        ? "Enter to send"
+                                        : "Ctrl/Cmd+Enter to send"}
                             </span>
                         </div>
                         {/* A real label, visually hidden: an aria-label on a
@@ -58,13 +62,19 @@ export function ChatInput({
                         <label htmlFor="chat-composer" className="sr-only">
                             Type your message
                         </label>
+                        {/* The composer stays editable while a reply streams:
+                            disabling it made people wait to draft the next
+                            message, and any selection or IME composition was
+                            lost. Sending is still withheld for the turn (the
+                            hook ignores submit while loading), and the hint
+                            above says so rather than eating Enter silently. */}
                         <Textarea
                             id="chat-composer"
                             value={value}
                             onChange={onChange}
                             onKeyDown={handleKeyDown}
                             placeholder="Ask anything, compare models, or shape the reply with your own voice."
-                            disabled={disabled || isLoading}
+                            disabled={disabled}
                             className={cn(
                                 "min-h-[68px] max-h-[220px] resize-none rounded-[1.5rem] border-0 bg-transparent px-4 py-3 text-base shadow-none",
                                 "sm:min-h-[108px] sm:py-4",
