@@ -374,6 +374,16 @@
               }
             }
           },
+          "400": {
+            "description": "The `cursorId` is malformed, or names no conversation the caller owns.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
@@ -535,7 +545,7 @@
       },
       "patch": {
         "summary": "Update a conversation",
-        "description": "Partial update. `archived: true` sets archivedAt, `false` clears it. Model changes are not part of this contract. `",
+        "description": "Partial update. `archived: true` sets archivedAt, `false` clears it. Model changes are not part of this contract.",
         "operationId": "updateConversation",
         "tags": [
           "Conversations"
