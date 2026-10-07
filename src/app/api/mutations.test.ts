@@ -32,7 +32,14 @@ vi.mock("@/lib/auth/session", () => ({ getServerSession: mocks.session }));
 vi.mock("@/lib/db/queries/api-keys", () => mocks.effects);
 vi.mock("@/lib/db/queries/conversations", () => mocks.effects);
 vi.mock("@/lib/db/queries/preferences", () => mocks.effects);
-vi.mock("@/lib/db/queries/projects", () => mocks.effects);
+vi.mock("@/lib/db/queries/projects", async () => {
+    const actual = await vi.importActual<typeof import("@/lib/db/queries/projects")>(
+        "@/lib/db/queries/projects"
+    );
+    // The route's duplicate-name mapping is an instanceof against this class, so
+    // the mock must expose the real one while keeping the recorded effects.
+    return { ...mocks.effects, DuplicateProjectNameError: actual.DuplicateProjectNameError };
+});
 vi.mock("@/lib/db/prisma", () => ({ prisma: { $transaction: mocks.effects.transaction } }));
 vi.mock("@/lib/mastra", () => mocks.effects);
 vi.mock("@/lib/mastra/index", () => mocks.effects);

@@ -25,6 +25,12 @@ import { cn } from "@/lib/utils";
 import { usePersonalizationStore } from "@/stores/personalization-store";
 import { useToast } from "@/stores/toast-store";
 
+// A 400 from the API carries the reason (a project name clash, for instance);
+// a bare "creation failed" made that look like a malfunction.
+function failureDetail(error: unknown): string | undefined {
+    return error instanceof Error && error.message ? error.message : undefined;
+}
+
 export function ConversationSidebar() {
     const router = useRouter();
     const pathname = usePathname();
@@ -204,7 +210,7 @@ export function ConversationSidebar() {
             success("Project created");
         } catch (error) {
             console.error("Failed to create project:", error);
-            toastError("Project creation failed");
+            toastError("Project creation failed", failureDetail(error));
         }
     };
 

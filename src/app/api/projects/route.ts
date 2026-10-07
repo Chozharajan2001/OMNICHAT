@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "@/lib/auth/session";
-import { createProject, getProjects } from "@/lib/db/queries/projects";
+import { createProject, DuplicateProjectNameError, getProjects } from "@/lib/db/queries/projects";
 import { z, ZodError } from "zod";
 import { createRateLimiter, getRateLimitHeaders, isRateLimitBackendUnavailableError } from "@/lib/rate-limit";
 import { guardMutationRequest } from "@/lib/api/csrf";
@@ -17,6 +17,32 @@ const writeRateLimiter = createRateLimiter({
     maxRequests: WRITE_RATE_LIMIT,
     keyGenerator: (userId) => `write:${userId}`,
 });
+
+
+// POST already sits at its complexity ceiling, so the failure mapping lives here:
+// a refused write is decided by the error, not by the handler. It deliberately
+// does NOT cover the rate-limit-backend error: that one is answered before
+// anything is logged, because its message can carry the internal endpoint/token.
+function projectWriteErrorResponse(error: unknown): NextResponse | null {
+    if (error instanceof DuplicateProjectNameError) {
+        // Documented under 400: the (userId, name) pair is already taken. As a
+        // 500 it read as a server fault, and the sidebar offered no retry path.
+        return NextResponse.json(
+            {
+                error: error.message,
+                details: [{ code: "custom", path: ["name"], message: error.message }],
+            },
+            { status: 400 }
+        );
+    }
+    if (error instanceof ZodError) {
+        return NextResponse.json(
+            { error: "Invalid request", details: error.issues },
+            { status: 400 }
+        );
+    }
+    return null;
+}
 
 export async function GET() {
     try {
@@ -80,14 +106,9 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Service unavailable" }, { status: 503 });
         }
         console.error("Failed to create project:", error);
-        
-        if (error instanceof ZodError) {
-            return NextResponse.json(
-                { error: "Invalid request", details: error.issues },
-                { status: 400 }
-            );
-        }
-        
+        const handled = projectWriteErrorResponse(error);
+        if (handled) return handled;
+
         return NextResponse.json(
             { error: "Failed to create project" },
             { status: 500 }
