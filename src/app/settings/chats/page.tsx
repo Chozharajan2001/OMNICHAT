@@ -268,15 +268,15 @@ export default function ChatsSettingsPage() {
                         <MessageSquareDashed className="h-5 w-5" />
                     </div>
                     <div>
-                        <h3 className="text-xl font-semibold">Pending chat organization features</h3>
+                        <h3 className="text-xl font-semibold">Not built yet</h3>
                         <p className="text-sm text-muted-foreground">
-                            These are the next higher-value workspace improvements inspired by Qwen/Grok.
+                            Workspace capabilities that do not exist in this build.
                         </p>
                     </div>
                 </div>
 
                 <div className="grid gap-3 md:grid-cols-2">
-                    {["Archive chats", "Projects/grouping", "Language selector", "Voice mode"].map((item) => (
+                    {["Voice mode", "Conversation export", "Message-level pagination"].map((item) => (
                         <div
                             key={item}
                             className="rounded-2xl border border-border/70 bg-background/20 px-4 py-3 text-sm text-muted-foreground"
@@ -296,7 +296,7 @@ export default function ChatsSettingsPage() {
             <ConfirmDialog
                 open={confirmingDeleteAll}
                 title="Delete all conversations"
-                description="Every conversation and its messages will be removed. Archived conversations stay until you delete them separately. This cannot be undone."
+                description="Every conversation and its messages will be removed, archived ones included. Nothing survives this action, and it cannot be undone."
                 confirmLabel="Delete everything"
                 onConfirm={handleDeleteAll}
                 onClose={() => setConfirmingDeleteAll(false)}
