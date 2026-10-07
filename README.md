@@ -212,3 +212,68 @@ container reached on port 3100, where sign-in still redirected to
 The Postgres and SQLite stacks pass a build-time `DATABASE_URL` argument because
 `prisma.config.ts` selects the schema from that value at `prisma generate` time;
 a generated client must match the adapter the container uses at runtime.
+
+## Platform hosting (Railway and Render)
+
+`railway.json` and `render.yaml` build this Dockerfile. Both are **untested from
+this repository's environment** — there is no Docker daemon and no account here —
+so treat a first deploy as a verification run against `/api/health` rather than
+as a done deal.
+
+Three things the compose stacks do that these platforms do not do for you:
+
+**1. Nothing provisions the schema.** Compose runs a one-shot `migrate` service
+and only starts the app after it succeeds. A blueprint has no such step, so the
+app boots against an empty database and `/api/health` answers `503 unhealthy`
+(`database: down`). Run the push yourself, once, before or right after the first
+deploy:
+
+```bash
+docker build --target migrate -t omnichat-migrate .
+docker run --rm -e DATABASE_URL="$DATABASE_URL" omnichat-migrate
+```
+
+Do not try this inside the app image. The `runner` stage copies
+`.next/standalone`, the Prisma schema and the generated client only — there is no
+`prisma` CLI, no `pnpm`, and the process runs as the non-root `nextjs` user. A
+`preDeployCommand` or one-off shell on the deployed service cannot work; use the
+`migrate` target image, which inherits the builder toolchain.
+
+**2. `railway.json` sets no environment variables.** As written it declares only
+build and deploy settings, so every value below has to come from the Railway
+dashboard (or `railway vars`). Required:
+
+| Variable | Why it is not optional |
+|---|---|
+| `DATABASE_URL` | Postgres connection; also selects the schema at build time |
+| `AUTH_SECRET` | Auth.js session signing; unset fails at boot with "Auth Configuration" |
+| `ENCRYPTION_SECRET_KEY` | vault key, 32+ characters, or health reports `degraded`/503 |
+| `NEXTAUTH_URL` **and** `APP_ORIGIN` | both to the same public origin — see below |
+| `RATE_LIMIT_BACKEND=memory` | see below |
+
+`render.yaml` does declare these, but `NEXTAUTH_URL` and `APP_ORIGIN` are
+`sync: false`: a blueprint cannot interpolate a service's own URL, and the
+hardcoded host it replaces redirected every real deployment to a domain nobody
+owns. Fill both in Render's dashboard.
+
+**3. Two defaults refuse to work off localhost.** `NEXTAUTH_URL` defaults to
+`http://localhost:3000`, so sign-in redirects back to the visitor's own machine;
+`APP_ORIGIN` is what the CSRF guard compares the browser's `Origin` against, and
+a mismatch answers every mutation 403. Set both to the public URL. Separately,
+production resolves the rate limiter to `redis-rest`, which **fails closed**
+without Upstash credentials — that shows up as `CredentialsSignin` on every
+login attempt. One container is safe on `memory`.
+
+**First account.** Automatic account creation is limited to development and
+desktop mode, and `EMAIL_VERIFICATION_REQUIRED` unset makes `/api/auth/register`
+answer 404. From the migrate image:
+
+```bash
+docker run --rm -e DATABASE_URL="$DATABASE_URL" omnichat-migrate \
+  node scripts/users/add-user.mjs --email you@example.com --verified
+```
+
+**No one-click deploy badge is offered.** A badge would start a service that
+fails both checks above — no schema and a localhost origin — and would look
+broken before an operator had a chance to set the variables. Use the blueprint
+files directly, after setting the environment.
