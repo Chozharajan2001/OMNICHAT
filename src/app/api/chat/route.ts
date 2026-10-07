@@ -112,16 +112,20 @@ export async function POST(req: Request) {
         if (!privateMode && conversationId) {
             const conversation = await getConversationWithMessages(conversationId, userId);
             if (!conversation) {
-                // Conversation not found or doesn't belong to user - create new one
-                conversationId = undefined;
-                history = [];
-            } else {
-                history = conversation.messages.map((m) => ({
-                    role: m.role as "system" | "user" | "assistant",
-                    content: m.content,
-                }));
-                conversationSystemPrompt = conversation.systemPrompt;
+                // An id the caller named must never quietly become a new
+                // conversation: the user keeps the transcript on screen while
+                // the server writes the turn somewhere else, and the old chat
+                // is silently orphaned. Not found / not yours is a 404.
+                return NextResponse.json(
+                    { error: "Conversation not found" },
+                    { status: 404 }
+                );
             }
+            history = conversation.messages.map((m) => ({
+                role: m.role as "system" | "user" | "assistant",
+                content: m.content,
+            }));
+            conversationSystemPrompt = conversation.systemPrompt;
         }
 
         // Create new conversation if needed

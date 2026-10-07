@@ -824,3 +824,33 @@ describe("POST /api/chat - fault injection with pre-stream persistence", () => {
         });
     });
 });
+
+describe("POST /api/chat - a named conversation is never silently forked (2.3)", () => {
+    // Must satisfy the schema's cuid rule to reach the lookup at all; a
+    // malformed id is already covered by the 400 case above.
+    const UNKNOWN_ID = "cnotpartofthisusershistory01";
+
+    it("returns 404 for an unknown conversationId and creates nothing", async () => {
+        mocks.getConversationWithMessages.mockResolvedValueOnce(null);
+
+        const response = await POST(request({ conversationId: UNKNOWN_ID }));
+
+        expect(response.status).toBe(404);
+        expect(await response.json()).toEqual({ error: "Conversation not found" });
+        expect(mocks.getConversationWithMessages).toHaveBeenCalledExactlyOnceWith(UNKNOWN_ID, USER_ID);
+        // The old branch fell through to "create a new conversation", so the
+        // turn was written to a brand-new chat while the user kept staring at
+        // the one that no longer existed.
+        expect(mocks.createConversation).not.toHaveBeenCalled();
+        expect(mocks.transaction).not.toHaveBeenCalled();
+        expectNoProviderStart();
+    });
+
+    it("still starts a conversation when no id is supplied at all", async () => {
+        const response = await POST(request());
+
+        expect(response.status).toBe(200);
+        expect(mocks.createConversation).toHaveBeenCalledTimes(1);
+        expect(mocks.getConversationWithMessages).not.toHaveBeenCalled();
+    });
+});
