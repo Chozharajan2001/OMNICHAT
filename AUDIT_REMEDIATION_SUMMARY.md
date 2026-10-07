@@ -1367,7 +1367,48 @@ before running gates; then 43/43 and 1064 tests pass.
 
 ---
 
-*Updated October 7, 2026 (Phase 14)*
+## Phase 15: Plan 1.2 verified; 2.1's live half still blocked (October 7, 2026)
+
+**1.2 -- `RATE_LIMIT_BACKEND=memory` on a fresh boot.** The plan's check was
+"wrong-password login returns a generic error, not a config crash". Run in a
+real browser against the built container:
+
+* one wrong password → the page shows "Unable to sign in. Check your credentials
+  and verify your email if required.", no session is created, and the page text
+  contains none of `redis`, `upstash`, rate-limit-backend, stack frames or env
+  variable names;
+* three consecutive failures left `/api/health` at 200 and the process intact;
+* the correct password immediately afterwards signed in, landed on `/chat`, and
+  the banner was gone -- so the limiter does not fail closed on the memory
+  backend, which is precisely the misconfiguration the plan flagged for Railway.
+
+Honest note on the probe: the first attempt tried to drive the credentials
+callback programmatically with `redirect: "manual"` and a placeholder password,
+and every call returned `opaqueredirect` status 0 -- which measured nothing. The
+conclusions above come from the browser rounds only.
+
+**2.1 -- "no rows in the database" could not be isolated here.** A private
+request on this container answers 400 "No API key configured", and conversations
+went **0 → 0**. But so did the *non-private* control request (0 rows, no
+`X-Conversation-Id` header), because the stored-key check precedes persistence in
+both modes. With no key there is nothing that can distinguish private mode's
+skip-persistence from an early bail-out, so the live half of this check still
+needs a real key.
+
+It is not untested: `src/app/api/chat/route.test.ts` runs private mode with a
+**successful mocked provider** and asserts `expectNoConversationAccess()` before
+and after the stream, no `X-Conversation-Id`, and separately that the request
+transcript is forwarded verbatim -- the "does not read or persist conversation
+data even with ID" cases. So the behaviour is covered where it can be covered;
+what is missing is an end-to-end run against a live provider.
+
+No code changed in this phase, so the last measured gates still describe HEAD:
+typecheck 0, eslint 0, quality 0, drift 0, **1064 tests / 43 files**. Containers
+and volumes removed, Docker Desktop closed.
+
+---
+
+*Updated October 7, 2026 (Phase 15)*
 *Branch: release/host-readiness*
-*Vault: ciphertext-only at rest, no plaintext on the wire, providerId whitelist enforced*
+*1.2 verified live; 2.1's live half and the provider-success path still need a real key*
 *Plan status: Phases 0-4 complete except item 6 (tag/push/PR, an owner order); Phase 5 is post-host by design*
