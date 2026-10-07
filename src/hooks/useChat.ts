@@ -27,6 +27,28 @@ function createMessageId(): string {
     return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 }
 
+interface TranscriptMessage {
+    role: "system" | "user" | "assistant";
+    content: string;
+}
+
+/**
+ * Private mode never touches the database, so the only history the provider can
+ * see is what this request carries. The route already forwards the whole
+ * `messages` array when privateMode is set (src/app/api/chat/route.ts:160-162)
+ * and prepareMessages does the context trimming -- it was the client that sent
+ * one message and made every private turn a fresh conversation.
+ */
+function buildTranscript(messages: TranscriptMessage[], userMessage: string, privateMode: boolean): TranscriptMessage[] {
+    if (!privateMode) return [{ role: "user", content: userMessage }];
+    return [
+        ...messages
+            .filter((message) => message.content.trim() !== "")
+            .map((message) => ({ role: message.role, content: message.content })),
+        { role: "user", content: userMessage },
+    ];
+}
+
 export function useChat(options: UseOmniChatOptions = {}) {
     const {
         projectId,
@@ -68,6 +90,8 @@ export function useChat(options: UseOmniChatOptions = {}) {
             const userMessage = input.trim();
             setInput("");
 
+            const transcript = buildTranscript(messages, userMessage, privateMode);
+
             // Add user message to store
             addMessage({
                 id: createMessageId(),
@@ -100,7 +124,7 @@ export function useChat(options: UseOmniChatOptions = {}) {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                        messages: [{ role: "user", content: userMessage }],
+                        messages: transcript,
                         providerId,
                         modelId,
                         conversationId: privateMode ? undefined : conversationId,
@@ -192,6 +216,7 @@ export function useChat(options: UseOmniChatOptions = {}) {
         [
             input,
             isLoading,
+            messages,
             providerId,
             modelId,
             conversationId,
