@@ -1,5 +1,6 @@
 import { Metadata } from "next";
 import { BadgeInfo, Boxes, Rocket, ShieldCheck } from "lucide-react";
+import { APP_VERSION } from "@/lib/version";
 
 export const metadata: Metadata = {
     title: "About | OmniChat",
@@ -50,7 +51,7 @@ export default function AboutSettingsPage() {
                     Current implementation notes
                 </div>
                 <div className="space-y-3 text-sm text-muted-foreground">
-                    <p>Version: `0.1.0`</p>
+                    <p>App version: {APP_VERSION} - the single source is package.json. The API contract version lives in /openapi.json and moves on its own.</p>
                     <p>Routing: Next.js App Router</p>
                     <p>Language selector: implemented as persisted UI preference, full localization pending</p>
                     <p>Verified commands: `npm run lint`, `npm run test`, `npm run build`</p>

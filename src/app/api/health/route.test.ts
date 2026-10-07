@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GET } from "./route";
+import { APP_VERSION } from "@/lib/version";
 
 const { queryRaw } = vi.hoisted(() => ({ queryRaw: vi.fn() }));
 vi.mock("@/lib/db/prisma", () => ({ prisma: { $queryRaw: queryRaw } }));
@@ -41,6 +42,18 @@ describe("GET /api/health", () => {
             // so strict probes treat the instance as not-ready.
             status: "degraded", checks: { database: "up", encryption: "down" },
         });
+    });
+
+    it("reports the package version and ignores the process environment", async () => {
+        // A container starts Next directly, so npm_package_version is unset
+        // there; reading it made the deployed version depend on how the
+        // process happened to be launched.
+        vi.stubEnv("npm_package_version", "9.9.9-environment-decoy");
+
+        const body = await (await GET()).json();
+
+        expect(body.version).toBe(APP_VERSION);
+        expect(body.version).not.toContain("decoy");
     });
 
     it("accepts the same minimum secret length as the vault", async () => {

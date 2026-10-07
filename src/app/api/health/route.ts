@@ -3,6 +3,7 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
+import { APP_VERSION } from "@/lib/version";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +59,7 @@ export async function GET(): Promise<NextResponse<HealthStatus>> {
     status,
     timestamp: new Date().toISOString(),
     checks,
-    version: process.env.npm_package_version || "0.1.0",
+    version: APP_VERSION,
   };
 
   const httpStatus = status === "healthy" ? 200 : 503;
