@@ -1021,3 +1021,48 @@ unrun for the same Docker reason.
 *Updated October 7, 2026 (Phase 10)*
 *Branch: release/host-readiness*
 *Tests: 1053 passing across 41 files*
+### Addendum: the audit's remaining Medium items
+
+Three more commits after the phase table above, closing the last items on the
+audit's Medium list that the plan had not scheduled.
+
+| Commit | Item |
+|--------|------|
+| `bc321d0` | Key validation bounded in cost and time (the "bills a real call, no timeout" item) |
+| `b3d35a0` | `folderId` removed from the input path ("accepted with no entity, orphans accumulate") |
+| `e120c73`| A failed title no longer logs as a failed message save ("completion failure invisible") |
+
+* **Validation bounds.** `validateApiKey` issued `generateText` with no
+  `maxOutputTokens` and no `abortSignal` -- "Say 'ok'" could answer at length on
+  the user's bill, and a silent provider held the request open. Both are now
+  constants (8 tokens, 15 s). This mattered more once 3.5 added a Verify button
+  that calls it on demand. An aborted call reads as "not confirmed", and the
+  toast now says "did not confirm - rejected, or the check timed out" instead of
+  claiming a rejection the server cannot distinguish.
+* **`folderId`.** There is no `Folder` model in either Prisma schema; the column
+  is a bare optional String with no relation, and four paths wrote a client-supplied
+  cuid into it with nothing to validate it against and nothing to read it back --
+  the same dead-contract class as `isPinned`, which was already removed for that
+  reason, except `isPinned` at least had no column. Removed from the request
+  schemas and the write path; the response field stays because `findMany` really
+  does return it, now documented as reserved and always null. Zod strips unknown
+  keys, so an old client sending it is ignored rather than rejected.
+* **The lesson worth keeping.** The first attempt at the third item added a retry
+  for a failed assistant write and set `completionPersisted` after the write. The
+  suite refused it -- those tests were documenting a decision, not a bug: retrying
+  a transaction whose message row may already have committed stores the reply
+  twice, and a lost reply is the lesser harm against a duplicate one. The
+  committed change therefore separates only the reporting, and keeps both pinned
+  behaviours. It also shows why "the audit says X is broken" is a lead:
+  the observable defect (wrong log line) was real, the implied defect (missing
+  retry) was not.
+
+Gate after these three: `tsc` 0, `eslint` 0, quality 0 (164 files),
+`quality:test` 0, drift-check 0 (9/9 models), **1058 tests / 42 files**.
+`next build` remains exit 1 for the environmental reason recorded above.
+
+---
+
+*Updated October 7, 2026 (Phase 10 addendum)*
+*Branch: release/host-readiness*
+*Tests: 1058 passing across 42 files*
