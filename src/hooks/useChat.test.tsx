@@ -118,4 +118,26 @@ describe("useChat request transcript", () => {
 
         expect(readBody(mock).conversationId).toBe("c-from-url");
     });
+
+    it("announces the conversation the route created, once per turn", async () => {
+        // The sidebar has no other signal that /chat just became a real
+        // conversation: without this the first chat only appears after a reload.
+        useChatStore.setState({ conversationId: null });
+        const onComplete = vi.fn();
+        vi.stubGlobal("fetch", vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
+            async () => new Response("", { status: 200, headers: { "X-Conversation-Id": "c-brand-new" } })
+        ));
+        const { result } = renderHook(() => useChat({ onComplete }));
+
+        await act(async () => {
+            result.current.setInput("First message of a new chat");
+        });
+        await act(async () => {
+            await result.current.handleSubmit();
+        });
+
+        expect(onComplete).toHaveBeenCalledTimes(1);
+        expect(onComplete).toHaveBeenCalledWith("c-brand-new");
+        expect(useChatStore.getState().conversationId).toBe("c-brand-new");
+    });
 });

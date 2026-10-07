@@ -5,7 +5,7 @@
 
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useChat } from "@/hooks/useChat";
 import { usePreferences } from "@/hooks/usePreferences";
 import { MessageList } from "./MessageList";
@@ -23,9 +23,22 @@ interface ChatContainerProps {
 
 export function ChatContainer({ conversationId, className }: ChatContainerProps) {
     const { preferences } = usePreferences();
-    const { providerId, modelId, activeProjectId, setModel, messages: storeMessages } = useChatStore();
+    const {
+        providerId, modelId, activeProjectId, setModel, bumpListVersion,
+        messages: storeMessages,
+    } = useChatStore();
     const privateChatMode = usePersonalizationStore((state) => state.privateChatMode);
     const hasAppliedDefaults = useRef(false);
+    // A conversation is announced to the sidebar exactly once: the first turn
+    // that creates it. Without this the list is only visible after a reload.
+    const announcedConversationId = useRef<string | null>(null);
+    const handleTurnComplete = useCallback((id: string) => {
+        if (announcedConversationId.current === id) {
+            return;
+        }
+        announcedConversationId.current = id;
+        bumpListVersion();
+    }, [bumpListVersion]);
     const {
         messages,
         input,
@@ -40,6 +53,7 @@ export function ChatContainer({ conversationId, className }: ChatContainerProps)
         projectId: activeProjectId,
         systemPrompt: preferences?.defaultSystemPrompt,
         privateMode: privateChatMode,
+        onComplete: handleTurnComplete,
         onError: (err) => {
             console.error("Chat error:", err);
         },

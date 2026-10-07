@@ -33,6 +33,7 @@ export function ConversationSidebar() {
         conversationId,
         clearMessages,
         isSidebarOpen,
+        listVersion,
         setActiveProjectId,
         toggleSidebar,
         setSidebarOpen,
@@ -40,7 +41,11 @@ export function ConversationSidebar() {
     const { success, error: toastError } = useToast();
 
     const { data: conversationData, loading: isLoading, refresh: fetchConversations, setData: setConversationData } =
-        useJsonResource<{ conversations: Conversation[] }>("/api/conversations", "Failed to fetch conversations", pathname);
+        useJsonResource<{ conversations: Conversation[] }>(
+            "/api/conversations",
+            "Failed to fetch conversations",
+            `${pathname}#${listVersion}`
+        );
     const { data: projectData, loading: isLoadingProjects, refresh: fetchProjects } =
         useJsonResource<{ projects: ProjectSummary[] }>("/api/projects", "Failed to fetch projects", pathname);
     const conversations = useMemo(() => conversationData?.conversations ?? [], [conversationData]);

@@ -45,6 +45,12 @@ interface ChatState {
     // UI state
     isSidebarOpen: boolean;
 
+    // Ephemeral list-refresh token. Bumped when a turn creates a conversation
+    // the sidebar has never been told about; the sidebar passes it as the
+    // refresh key of its /api/conversations read. Not persisted: a reload
+    // re-fetches the list anyway.
+    listVersion: number;
+
     // Actions
     setProviderId: (id: string) => void;
     setModelId: (id: string) => void;
@@ -61,6 +67,7 @@ interface ChatState {
 
     toggleSidebar: () => void;
     setSidebarOpen: (open: boolean) => void;
+    bumpListVersion: () => void;
 }
 
 export const useChatStore = create<ChatState>()(
@@ -74,6 +81,7 @@ export const useChatStore = create<ChatState>()(
             conversationTitle: "New Chat",
             messages: [],
             isSidebarOpen: true,
+            listVersion: 0,
 
             // Model selection actions
             setProviderId: (id) => set({ providerId: id }),
@@ -106,6 +114,7 @@ export const useChatStore = create<ChatState>()(
             // UI actions
             toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
             setSidebarOpen: (open) => set({ isSidebarOpen: open }),
+            bumpListVersion: () => set((state) => ({ listVersion: state.listVersion + 1 })),
         }),
         {
             name: "omnichat-chat-store",

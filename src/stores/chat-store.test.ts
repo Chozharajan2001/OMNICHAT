@@ -80,3 +80,14 @@ describe("chat-store updateMessage", () => {
         warn.mockRestore();
     });
 });
+
+describe("chat-store listVersion", () => {
+    it("monotonically increases so a refresh key cannot repeat", () => {
+        const before = useChatStore.getState().listVersion;
+
+        useChatStore.getState().bumpListVersion();
+        useChatStore.getState().bumpListVersion();
+
+        expect(useChatStore.getState().listVersion).toBe(before + 2);
+    });
+});
