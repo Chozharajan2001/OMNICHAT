@@ -1165,3 +1165,74 @@ non-empty token metrics) which needs a working key and spends quota.
 *Updated October 7, 2026 (Phase 11)*
 *Branch: release/host-readiness*
 *Tests: 1064 passing across 43 files*
+
+---
+
+## Phase 12: The Phase 1 exit gate, run (October 7, 2026)
+
+Earlier phases recorded this gate as blocked on "no Docker daemon on this
+host". That was wrong in a way that mattered: Docker CLI 29.6.1 and Compose
+v5.3.0 were installed the whole time; Docker Desktop was simply not running.
+Starting it took the daemon to `up` in about 15 s, and the gate then ran in
+full. The record below is the first time either stack has been booted.
+
+**`docker-compose.sqlite.yml`, fresh (no pre-existing volume):**
+
+* `config --quiet` exit 0. `build` exit 0 (`omnichat-app`, `omnichat-migrate`).
+* `up -d`: `migrate` **Exited (0)** → `app` started, so
+  `condition: service_completed_successfully` really does gate the boot.
+* `/api/health` **200** `{"status":"healthy","checks":{"database":"up",
+  "encryption":"up"},"version":"0.1.0"}` on an empty database.
+* Guards: `POST /api/chat` anonymous (with a correct `Origin`) → **401**, not
+  403/503 -- plan 1.1's exact check. `/api/providers` **401**,
+  `/api/conversations` **401**, `GET /chat` **302 → /login**,
+  `/api/metrics` without `METRICS_TOKEN` **404**.
+* First operator created with the runbook command, `docker compose run -i --rm
+  migrate node scripts/users/add-user.mjs --email … --verified`, exit 0. It has
+  to be the `migrate` service: the runner image copies `prisma`, the generated
+  client and the app, but not `scripts/`.
+* Real browser against the built image: credentials sign-in lands on `/chat`
+  with the right session email, and the login page renders **no OAuth buttons**
+  while `GOOGLE_*`/`GITHUB_*` are empty (Phase 4 item 1, now proven on the
+  production bundle).
+* Plan 2.6 on the production bundle: create **201**, archive **200**,
+  unarchive **200**, delete **200**, preferences PATCH **200** -- no 403
+  anywhere with `APP_ORIGIN` set.
+
+**`docker-compose.yml` (PostgreSQL):**
+
+* `config --quiet` exits 1 with no `POSTGRES_*` and 0 with them, because the
+  file uses `${POSTGRES_USER:?…}` -- fail-closed by design, not a broken file.
+* `up -d --build` exit 0 in ~160 s: `db` Healthy, `migrate` Exited (0), `app` up.
+* First health read was **503 `{"database":"up","encryption":"down"}`** --
+  because the throwaway env file I generated carried a **16-character**
+  `ENCRYPTION_SECRET_KEY`. That is precisely the failure mode plan 1.4 predicted
+  and `README:271` documents, reproduced by my own mistake and observed as a
+  degraded 503 rather than a crash. After re-issuing 44-character secrets and
+  `up -d --force-recreate app`: **200 healthy, `encryption: up`**.
+* Write path on the `PrismaPg` adapter, signed in through the browser: projects
+  **201**, duplicate project name **400** (Phase 3.4, on Postgres),
+  conversation **201**, archive **200**, list **200** returning 0 conversations
+  (archived excluded), delete **200**.
+
+**Not proven, and why.** The CSRF **403** branch was not exercised live: from
+outside the browser, an unauthenticated foreign-`Origin` POST is answered
+**401** because the session check precedes the origin check, and the httpOnly
+session cookie cannot be lifted from the page to replay a foreign origin. That
+branch remains covered by `src/app/api/mutations.test.ts`.
+
+**Teardown.** Both stacks `down -v`, the accidental data volume removed, the
+throwaway accounts gone with their volumes, and every generated secret and
+password file deleted. Built images were kept as cache. Docker Desktop was left
+running.
+
+**Gate status:** Phase 1's exit gate -- *fresh sqlite + pg compose boots, health
+200, login works, chat 401 anon* -- is **met on both stacks**. Of the plan's
+five phases, what remains is Phase 4 item 6 (tag, push, PR: an owner decision)
+and Phase 5 (explicitly post-host).
+
+---
+
+*Updated October 7, 2026 (Phase 12)*
+*Branch: release/host-readiness*
+*Tests: 1064 passing across 43 files; both compose stacks booted and gated*
