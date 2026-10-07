@@ -899,3 +899,125 @@ the Phase 2 exit gate (tests plus targeted new tests, all green) is met.
 *Updated October 7, 2026 (Phase 9)*
 *Branch: release/host-readiness*
 *Tests: 1006 passing across 34 files*
+
+## Phase 10: Data, UX and Release Remediation (October 7, 2026)
+
+Phase 3 (tasks 3.1-3.8) and Phase 4 items 1-5 of the host-readiness plan, on
+`release/host-readiness`. As before, every claim in the plan was checked against
+source or measurement first; the phase's exit gate was run against a live dev
+server in a real browser, and it found one defect the plan did not list.
+
+### Commits
+
+| Task | Commit | What it fixes |
+|------|--------|---------------|
+| 3.1 | `41cc4f2` | The sidebar learns about a new conversation without a reload |
+| 3.2 | `f3005b6` | The composer stays writable while a reply streams |
+| 3.3 | `c636335` | A refused archive or delete says so instead of doing nothing |
+| 3.4 | `d852c10` | A duplicate project name is the 400 the spec promised |
+| 3.5 | `85343c4` | Unvalidated keys are visible and verifiable; unknown providers cannot be stored |
+| 3.6 | `ced8007` | Preferences report unsaved state; defaults checked against the registry |
+| 3.7 | `681b89c` | The model picker stops claiming no keys while the vault is loading |
+| 3.8 | `fcc7518` | Sidebar search states how far it actually looks |
+| (gate finding) | `8df4d0a` | A refused provider turn no longer returns a blank reply |
+| 4.1 | `a702283` | OAuth buttons render only for providers that exist |
+| 4.2 | `d49e213` | package.json is the single source of the app version |
+| 4.3 | `19d0815` | Delete-all no longer claims archived chats survive |
+| 4.4 | `8015678` | `/api/metrics` documented from a live scrape, not assumption |
+| 4.5 | `53a87a9` | Railway and Render bring-up, including what cannot run in the app image |
+
+### The Phase 3 exit gate, run rather than asserted
+
+The plan asked for: new user -> add key -> chat -> archive -> search -> delete,
+with zero silent failures. Executed against `next dev` on a scratch copy of the
+database, driven in headless Chromium over CDP. **34 checks passed.**
+
+* 11 UI checks: real credentials login; the stored-but-unverified badge and its
+  hint; Verify reporting a refusal visibly and leaving the state unverified; the
+  preferences form clean on load, Save disabled, dirty after clearing the
+  greeting, clean again after saving, and the cleared greeting stored as empty.
+* 5 UI checks: 112 seeded conversations render as a capped 100-row page with the
+  truncation stated, the wording changing under an active query, and the composer
+  editable with typing preserved during a live turn.
+* 2 UI checks: a refused delete on a row the server had already dropped produces
+  a toast rather than silence, and a successful archive reports itself.
+* 14 API checks executed through the browser's authenticated session (a Node
+  cookie jar could not complete the Auth.js handshake): duplicate project 400
+  with the reason, malformed and non-owned cursors both 400, the capped page
+  returning 100 rows with a further page and no overlap on resume, unknown
+  provider refused for preferences/keys/chat, theme-only PATCH still valid,
+  cross-provider model pair refused, unknown conversation id 404.
+* 2 raw-stream reads confirming the new failure notice reaches the body.
+
+### What the gate found that the plan did not list
+
+A turn whose key the provider refuses answered 200 with an empty body: no reply,
+no error, nothing. The route's own comment claimed the stream client saw the
+error while `onError` only wrote to the server log. The failure is now appended
+to the text body in the app's words, without relaying the upstream message
+(OpenAI's 401 body quotes the key back masked). The first implementation attempt
+broke two pre-existing contract tests -- one mocking only `toTextStreamResponse`,
+one injecting a synchronous fault through it to prove the user message is stored
+before streaming -- and the final version appends on the SDK's own bytes, so both
+tests pass again with the guarantees they were written for.
+
+### Corrections to the plan's own items
+
+* 3.3 named only the sidebar; the chats settings page already handled
+  `!response.ok`, so the defect was confined to the two handlers the plan pointed
+  at, and the fix reuses the file's existing throw-and-toast convention.
+* 3.4 was not a missing pre-check: the constraint is the guard, because
+  exists-then-create still loses the race. P2002 with `meta.modelName: "Project"`
+  was measured on the SQLite path before the mapping was written.
+* 3.5's re-validate needed a server call (the credential never leaves the vault),
+  so `POST /api/api-keys/{providerId}/validate` was added -- rate limited, because
+  every check bills a real request -- using `markKeyValid`, a query that existed
+  with no caller.
+* 3.6's dirty tracking is a canonical-string comparison, and 3.8's notice is a
+  module-scope component, because `PreferencesForm` (24) and
+  `ConversationSidebar` (18) were at their recorded ceilings and this complexity
+  accounting counts `||` as a branch.
+* 3.8: the local `setData` path rebuilt the page as `{ conversations }`, which
+  would have dropped `nextCursor` on every archive and made the new notice vanish
+  mid-list. It now spreads the previous page.
+
+### Still not verified
+
+* **`next build` is not green on this machine.** It compiles and generates all 25
+  pages, then fails copying `@libsql/darwin-arm64` into `.next/standalone` -- an
+  optional macOS binding that is not installed here (only `win32-x64-msvc` is).
+  Deliberately not "fixed" by adding `outputFileTracingExcludes`: excluding native
+  libsql paths without being able to boot the Linux container risks a silently
+  broken runtime driver, which is worse than a red build gate. Verify on a host
+  with Docker.
+* The provider-success path (a real completion, title generation, non-empty
+  metrics) is untested: it needs a working API key, and spending the operator's
+  quota is not this agent's call. Everything measured here used a deliberately
+  invalid stored key.
+* Neither Railway nor Render has been deployed, and the compose stacks were never
+  booted (no Docker daemon in this environment).
+* Metrics remain unwired for traffic, rate-limit and sign-in families; documented
+  rather than plumbed, since it means touching the route guard and auth callbacks.
+
+### End-of-phase gate (measured)
+
+```
+tsc --noEmit                    exit 0
+eslint . --max-warnings 0       exit 0
+node scripts/quality/check.mjs  exit 0   Quality: 163 files, 0 errors, 0 warnings
+node --test quality.test.mjs    exit 0
+prisma-drift-check              exit 0   9 PostgreSQL models, 9 SQLite models
+vitest run                      exit 0   41 files passed, 1053 tests passed
+next build                      exit 1   standalone copy step (environmental)
+live browser + API gate         34/34 checks passed
+```
+
+Phase 4 item 6 (tag `v0.1.0-rc1`, push, open the PR) is **not done**: pushing,
+tagging and merging remain owner decisions. Phase 1's compose exit gate remains
+unrun for the same Docker reason.
+
+---
+
+*Updated October 7, 2026 (Phase 10)*
+*Branch: release/host-readiness*
+*Tests: 1053 passing across 41 files*
