@@ -6,9 +6,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // the only way to create the row, so the settings screen was a dead end for every
 // fresh install until a row existed by some other route.
 
+// The saved row is what each case starts from: null for a fresh account, a
+// partial row for one saved before a provider or model changed.
+const saved = vi.hoisted(() => ({ row: null as unknown }));
+
 vi.mock("@/hooks/usePreferences", () => ({
     usePreferences: () => ({
-        preferences: null,
+        preferences: saved.row,
         loading: false,
         error: null,
         updatePreferences: vi.fn(),
@@ -25,6 +29,14 @@ vi.mock("next/navigation", () => ({
 // of names to keep in sync with the page.
 
 import PreferencesPage from "./page";
+import { getProvider } from "@/lib/mastra/providers";
+
+// Read from the real registry: pinning an id here would make the case pass for
+// the wrong reason the next time a default model changes.
+function defaultModelIdFor(providerId: string): string {
+    const models = getProvider(providerId)?.models ?? [];
+    return (models.find((model) => model.isDefault) ?? models[0]).id;
+}
 
 // jsdom gives no usable localStorage here and the personalization store
 // rehydrates through it on mount; back it with a map.
@@ -65,5 +77,45 @@ describe("preferences page with no saved row", () => {
         expect(document.querySelectorAll("select")).toHaveLength(0);
         expect(screen.getByLabelText("Provider").getAttribute("role")).toBe("combobox");
         expect(screen.getByLabelText("Model").getAttribute("role")).toBe("combobox");
+    });
+});
+
+describe("preferences page with a saved row", () => {
+    afterEach(() => {
+        cleanup();
+        saved.row = null;
+    });
+
+    it("opens clean when the stored model is the one the registry resolves to", () => {
+        saved.row = {
+            defaultProviderId: "openai",
+            defaultModelId: defaultModelIdFor("openai"),
+            defaultSystemPrompt: "Answer briefly.",
+            theme: "system",
+            sendWithEnter: true,
+            showTokenCount: false,
+        };
+        render(<PreferencesPage />);
+
+        expect(screen.queryByText(/Unsaved changes/i)).toBeNull();
+        expect(screen.getByRole("button", { name: /Save preferences/i })).toBeTruthy();
+    });
+
+    it("does not report unsaved changes when the stored model no longer resolves", () => {
+        // The form shows the registry default for a model id that is missing or
+        // unknown, so the saved side has to derive it the same way. Comparing the
+        // raw column against the derived field reported "Unsaved changes" on every
+        // mount for such a row, and Save was live without the user touching anything.
+        saved.row = {
+            defaultProviderId: "openai",
+            defaultModelId: "gpt-3.5-turbo-instruct",
+            defaultSystemPrompt: null,
+            theme: "system",
+            sendWithEnter: true,
+            showTokenCount: false,
+        };
+        render(<PreferencesPage />);
+
+        expect(screen.queryByText(/Unsaved changes/i)).toBeNull();
     });
 });

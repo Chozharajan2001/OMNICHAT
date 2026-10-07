@@ -53,10 +53,26 @@ function valuesSignature(values: FormValues): string {
     return JSON.stringify(values);
 }
 
+/**
+ * A stored model that no longer resolves -- a column left empty, or an id that
+ * has since gone out of the registry -- is displayed as the registry default,
+ * never as a blank field. Both the form and the saved signature go through here:
+ * comparing the raw column against this derived value reported "Unsaved changes"
+ * on every mount for such a row, with Save live and nothing touched.
+ */
+function resolveModelSelection(providerId: string, storedModelId: string): string {
+    const models = getProvider(providerId)?.models || [];
+    return models.find((model) => model.id === storedModelId)?.id
+        ?? models.find((model) => model.isDefault)?.id
+        ?? models[0]?.id
+        ?? "";
+}
+
 function savedSignatureOf(initial: PreferenceValues, welcome: string): string {
+    const providerId = initial.defaultProviderId || "openai";
     return valuesSignature({
-        providerId: initial.defaultProviderId || "openai",
-        modelId: initial.defaultModelId || "",
+        providerId,
+        modelId: resolveModelSelection(providerId, initial.defaultModelId || ""),
         systemPrompt: initial.defaultSystemPrompt ?? "",
         theme: initial.theme,
         sendWithEnter: initial.sendWithEnter ?? true,
@@ -168,18 +184,15 @@ function PreferencesForm({ initialPreferences, updatePreferences }: {
         const provider = getProvider(providerId);
         return provider?.models || [];
     }, [providerId]);
-    const modelId = availableModels.find((model) => model.id === selectedModelId)?.id
-        ?? availableModels.find((model) => model.isDefault)?.id
-        ?? availableModels[0]?.id
-        ?? "";
+    const modelId = resolveModelSelection(providerId, selectedModelId);
 
     const savedValues = useMemo(
         () => savedSignatureOf(initialPreferences, welcomeMessage),
         [initialPreferences, welcomeMessage]
     );
-    // Compared against what the server actually holds, so a default that no
-    // longer exists in the registry shows as unsaved instead of being quietly
-    // substituted at the next save.
+    // Both sides run through resolveModelSelection, so a stored default that no
+    // longer resolves reads as the registry default it is displayed as -- clean,
+    // and corrected only when the user actually changes something.
     const isDirty = valuesSignature({
         providerId,
         modelId,
