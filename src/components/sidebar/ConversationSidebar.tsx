@@ -24,11 +24,35 @@ import {
 import { cn } from "@/lib/utils";
 import { usePersonalizationStore } from "@/stores/personalization-store";
 import { useToast } from "@/stores/toast-store";
+import { MAX_PAGE_SIZE } from "@/lib/constants";
 
 // A 400 from the API carries the reason (a project name clash, for instance);
 // a bare "creation failed" made that look like a malfunction.
 function failureDetail(error: unknown): string | undefined {
     return error instanceof Error && error.message ? error.message : undefined;
+}
+
+// Search here is client-side over one page, so the page is asked for at the
+// largest size the API will serve (it clamps to MAX_PAGE_SIZE) and the remaining
+// scope is stated rather than implied. A server-side `?q=` is the real fix and
+// stays on the backlog.
+const SIDEBAR_CONVERSATION_LIMIT = MAX_PAGE_SIZE;
+
+interface ConversationPage {
+    conversations: Conversation[];
+    nextCursor?: { id: string } | null;
+}
+
+// Its own component because ConversationSidebar has spent its branch budget.
+function SearchScopeNotice({ truncated, hasQuery }: { truncated: boolean; hasQuery: boolean }) {
+    if (!truncated) return null;
+    return (
+        <p className="px-1 pt-2 text-xs leading-5 text-muted-foreground">
+            {hasQuery
+                ? `Matched within the ${SIDEBAR_CONVERSATION_LIMIT} most recent chats. Older chats are not searched.`
+                : `Showing the ${SIDEBAR_CONVERSATION_LIMIT} most recent chats. Search covers these only.`}
+        </p>
+    );
 }
 
 export function ConversationSidebar() {
@@ -47,8 +71,8 @@ export function ConversationSidebar() {
     const { success, error: toastError } = useToast();
 
     const { data: conversationData, loading: isLoading, refresh: fetchConversations, setData: setConversationData } =
-        useJsonResource<{ conversations: Conversation[] }>(
-            "/api/conversations",
+        useJsonResource<ConversationPage>(
+            `/api/conversations?limit=${SIDEBAR_CONVERSATION_LIMIT}`,
             "Failed to fetch conversations",
             `${pathname}#${listVersion}`
         );
@@ -57,7 +81,12 @@ export function ConversationSidebar() {
     const conversations = useMemo(() => conversationData?.conversations ?? [], [conversationData]);
     const projects = projectData?.projects ?? [];
     const setConversations = (update: (previous: Conversation[]) => Conversation[]) =>
-        setConversationData((current) => ({ conversations: update(current?.conversations ?? []) }));
+        setConversationData((current) => ({
+            // Spread first: a local archive/delete must keep nextCursor, or the
+            // truncation notice would silently vanish mid-list.
+            ...current,
+            conversations: update(current?.conversations ?? []),
+        }));
     const [isDesktop, setIsDesktop] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
@@ -352,6 +381,11 @@ export function ConversationSidebar() {
                             className="h-11 rounded-2xl border-border/70 bg-background/40 pl-9"
                         />
                     </div>
+
+                    <SearchScopeNotice
+                        truncated={!!conversationData?.nextCursor}
+                        hasQuery={searchQuery.trim() !== ""}
+                    />
                 </div>
 
                 <Separator />
@@ -381,7 +415,7 @@ export function ConversationSidebar() {
                         />
                         {!isLoading && searchQuery.trim() && filteredConversations.length === 0 ? (
                             <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-background/20 p-4 text-sm text-muted-foreground">
-                                No chats match &quot;{searchQuery}&quot;.
+                                No chat in this list matches &quot;{searchQuery}&quot;.
                             </div>
                         ) : null}
                     </div>
