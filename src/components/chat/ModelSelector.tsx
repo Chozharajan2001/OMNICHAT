@@ -21,34 +21,51 @@ import {
 } from "@/components/ui/select";
 import { KeyRound, Sparkles } from "lucide-react";
 
-export function ModelSelector() {
+const VALUE_SEPARATOR = ":";
+
+// Radix hands back the whole `${providerId}:${modelId}` string. Model ids are
+// not forbidden from containing a colon, and `split(":")` would truncate at the
+// second one, so the pair is cut at the FIRST separator only.
+export function splitModelValue(value: string): [string, string] {
+    const at = value.indexOf(VALUE_SEPARATOR);
+    if (at < 0) return [value, ""];
+    return [value.slice(0, at), value.slice(at + 1)];
+}
+
+function PlaceholderButton({ kind }: { kind: "loading" | "connect" }) {
+    const classes = "h-12 rounded-full border-border/70 bg-background/40 px-4";
+    if (kind === "loading") {
+        return (
+            <Button variant="outline" disabled className={classes}>
+                <KeyRound className="h-4 w-4" />
+                Loading models
+            </Button>
+        );
+    }
+    return (
+        <Button asChild variant="outline" className={classes}>
+            <Link href="/settings/providers">
+                <KeyRound className="h-4 w-4" />
+                Connect a provider
+            </Link>
+        </Button>
+    );
+}
+
+function ModelPicker() {
     const { modelId, providerId, setModel } = useChatStore();
     const { keys } = useApiKeys();
     const provider = getProvider(providerId);
     const model = getModel(providerId, modelId);
-    const hasAnyValidKey = keys.some((key) => key.isValid);
 
-    // Check which providers have keys configured
-    const hasKey = (providerId: string) => {
-        return keys.some((k) => k.providerId === providerId && k.isValid);
-    };
+    // A key stored but never confirmed counts as absent here: without a working
+    // credential the provider's models cannot be used.
+    const hasKey = (id: string) => keys.some((key) => key.providerId === id && key.isValid);
 
     const handleValueChange = (value: string) => {
-        // Value format: "providerId:modelId"
-        const [newProviderId, newModelId] = value.split(":");
-        setModel(newProviderId, newModelId);
+        const [nextProviderId, nextModelId] = splitModelValue(value);
+        setModel(nextProviderId, nextModelId);
     };
-
-    if (!hasAnyValidKey) {
-        return (
-            <Button asChild variant="outline" className="h-12 rounded-full border-border/70 bg-background/40 px-4">
-                <Link href="/settings/providers">
-                    <KeyRound className="h-4 w-4" />
-                    Connect a provider
-                </Link>
-            </Button>
-        );
-    }
 
     return (
         <Select
@@ -76,25 +93,25 @@ export function ModelSelector() {
                 </div>
             </SelectTrigger>
             <SelectContent>
-                {SUPPORTED_PROVIDERS.map((provider) => (
-                    <SelectGroup key={provider.id}>
+                {SUPPORTED_PROVIDERS.map((option) => (
+                    <SelectGroup key={option.id}>
                         <SelectLabel className="flex items-center gap-2">
-                            <span>{provider.name}</span>
-                            {!hasKey(provider.id) && (
+                            <span>{option.name}</span>
+                            {!hasKey(option.id) && (
                                 <span className="text-xs text-muted-foreground">
                                     (No key)
                                 </span>
                             )}
                         </SelectLabel>
-                        {provider.models.map((model) => (
+                        {option.models.map((optionModel) => (
                             <SelectItem
-                                key={`${provider.id}:${model.id}`}
-                                value={`${provider.id}:${model.id}`}
-                                disabled={!hasKey(provider.id)}
+                                key={`${option.id}:${optionModel.id}`}
+                                value={`${option.id}:${optionModel.id}`}
+                                disabled={!hasKey(option.id)}
                             >
                                 <div className="flex items-center justify-between gap-2">
-                                    <span>{model.name}</span>
-                                    {model.isDefault && (
+                                    <span>{optionModel.name}</span>
+                                    {optionModel.isDefault && (
                                         <span className="text-xs text-muted-foreground">
                                             Default
                                         </span>
@@ -107,4 +124,15 @@ export function ModelSelector() {
             </SelectContent>
         </Select>
     );
+}
+
+export function ModelSelector() {
+    // `loading` was ignored, so every mount answered "no keys" while the vault
+    // request was still in flight and the Connect prompt flashed before the
+    // real selector replaced it.
+    const { keys, loading } = useApiKeys();
+    if (loading) return <PlaceholderButton kind="loading" />;
+    if (!keys.some((key) => key.isValid)) return <PlaceholderButton kind="connect" />;
+
+    return <ModelPicker />;
 }
