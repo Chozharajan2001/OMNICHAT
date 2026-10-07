@@ -69,6 +69,11 @@ services:
       # Authentication
       AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET is required}
       NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      # The public origin Auth.js and the same-origin CSRF guard must agree on.
+      # In production set it IDENTICALLY to NEXTAUTH_URL: NEXTAUTH_URL alone does
+      # not satisfy Auth.js trustHost, and the CSRF guard compares Origin
+      # verbatim against APP_ORIGIN ?? NEXTAUTH_URL.
+      APP_ORIGIN: ${APP_ORIGIN:-${NEXTAUTH_URL:-http://localhost:3000}}
       # Encryption
       ENCRYPTION_SECRET_KEY: ${ENCRYPTION_SECRET_KEY:?ENCRYPTION_SECRET_KEY is required}
       # OAuth (optional)
