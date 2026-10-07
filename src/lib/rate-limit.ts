@@ -163,9 +163,12 @@ export const chatRateLimiter = createRateLimiter({
  * Rate limiter for API key validation
  * 10 requests per minute per user
  */
+/** Requests per minute for API-key save and re-validate; also the limit the 429 headers report. */
+export const API_KEY_RATE_LIMIT = 10;
+
 export const apiKeyRateLimiter = createRateLimiter({
   windowMs: 60_000, // 1 minute
-  maxRequests: 10,
+  maxRequests: API_KEY_RATE_LIMIT,
   keyGenerator: (userId) => `api-key:${userId}`,
 });
 

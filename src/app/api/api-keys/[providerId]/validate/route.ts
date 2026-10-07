@@ -8,7 +8,7 @@ import { guardMutationRequest } from "@/lib/api/csrf";
 import { getDecryptedKey, markKeyValid } from "@/lib/db/queries/api-keys";
 import { validateApiKey } from "@/lib/mastra";
 import { getProvider } from "@/lib/mastra/providers";
-import { apiKeyRateLimiter, isRateLimitBackendUnavailableError } from "@/lib/rate-limit";
+import { apiKeyRateLimiter, API_KEY_RATE_LIMIT, getRateLimitHeaders, isRateLimitBackendUnavailableError } from "@/lib/rate-limit";
 
 export async function POST(
     request: Request,
@@ -32,14 +32,18 @@ export async function POST(
         }
 
         // Rate limited because a real provider request is billed on every call;
-        // an unthrottled button is a way to spend someone's quota.
+        // an unthrottled button is a way to spend someone's quota. Same limiter and
+        // headers as the save endpoint, which is what the documented 429 promises.
         const rateLimit = await apiKeyRateLimiter.check(session.user.id);
         if (rateLimit.limited) {
             return NextResponse.json(
                 { error: "Too many requests", retryAfter: rateLimit.retryAfter },
                 {
                     status: 429,
-                    headers: { "Retry-After": String(rateLimit.retryAfter) },
+                    headers: {
+                        "Retry-After": String(rateLimit.retryAfter),
+                        ...getRateLimitHeaders(rateLimit.remaining, rateLimit.resetTime, API_KEY_RATE_LIMIT),
+                    },
                 }
             );
         }

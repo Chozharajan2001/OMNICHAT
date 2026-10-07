@@ -4,7 +4,7 @@ import { guardMutationRequest } from "@/lib/api/csrf";
 import { saveKeySchema } from "@/lib/validators/schemas";
 import { saveApiKey, getUserKeys } from "@/lib/db/queries/api-keys";
 import { validateApiKey } from "@/lib/mastra";
-import { apiKeyRateLimiter, getRateLimitHeaders, isRateLimitBackendUnavailableError } from "@/lib/rate-limit";
+import { apiKeyRateLimiter, API_KEY_RATE_LIMIT, getRateLimitHeaders, isRateLimitBackendUnavailableError } from "@/lib/rate-limit";
 import { ZodError } from "zod";
 
 export async function GET() {
@@ -44,7 +44,7 @@ export async function POST(request: Request) {
                     status: 429,
                     headers: {
                         "Retry-After": String(rateLimitResult.retryAfter),
-                        ...getRateLimitHeaders(rateLimitResult.remaining, rateLimitResult.resetTime, 10),
+                        ...getRateLimitHeaders(rateLimitResult.remaining, rateLimitResult.resetTime, API_KEY_RATE_LIMIT),
                     },
                 }
             );

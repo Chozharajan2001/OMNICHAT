@@ -16,11 +16,14 @@ vi.mock("@/lib/db/queries/api-keys", () => ({ getDecryptedKey, markKeyValid }));
 vi.mock("@/lib/mastra", () => ({ validateApiKey }));
 // @/lib/mastra/providers is deliberately NOT mocked: the registry check under
 // test is only meaningful against the real provider list.
-vi.mock("@/lib/rate-limit", () => ({
-    apiKeyRateLimiter: { check: checkRateLimit, reset: vi.fn() },
-    getRateLimitHeaders: () => ({}),
-    isRateLimitBackendUnavailableError: () => false,
-}));
+vi.mock("@/lib/rate-limit", async () => {
+    const actual = await vi.importActual<typeof import("@/lib/rate-limit")>("@/lib/rate-limit");
+    return {
+        ...actual,
+        apiKeyRateLimiter: { check: checkRateLimit, reset: vi.fn() },
+        isRateLimitBackendUnavailableError: () => false,
+    };
+});
 
 import { POST } from "./route";
 
@@ -104,6 +107,12 @@ describe("POST /api/api-keys/[providerId]/validate (3.5)", () => {
 
         expect(response.status).toBe(429);
         expect(response.headers.get("Retry-After")).toBe("42");
+        // The documented 429 for this operation is RateLimitedChat, which
+        // declares the X-RateLimit-* trio; the save endpoint sends it, so this
+        // one must too.
+        expect(response.headers.get("X-RateLimit-Limit")).toBe("10");
+        expect(response.headers.get("X-RateLimit-Remaining")).toBeDefined();
+        expect(response.headers.get("X-RateLimit-Reset")).toBeDefined();
         expect(validateApiKey).not.toHaveBeenCalled();
     });
 
