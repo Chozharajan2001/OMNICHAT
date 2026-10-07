@@ -1,7 +1,20 @@
 import type { NextConfig } from "next";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// This repository's parent directory also holds a package.json and a
+// pnpm-lock.yaml, so Next infers the tracing root one level up. Locally that
+// nests the standalone output under `omnichat/` -- `node server.js` would then
+// start from the wrong directory -- and it rewrites the paths that
+// outputFileTracingExcludes has to match. Inside the image the build context is
+// this directory alone, so pinning it here makes the local build behave like the
+// Docker build instead of silently differing from it.
+const APP_ROOT = dirname(fileURLToPath(import.meta.url));
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  outputFileTracingRoot: APP_ROOT,
+  turbopack: { root: APP_ROOT },
   images: {
     unoptimized: true, // Required for Tauri desktop app
   },
