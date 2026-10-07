@@ -89,7 +89,6 @@ export interface ProviderDefinition {
     icon: string;
     website: string;
     keyPlaceholder: string;
-    keyPattern: RegExp;
     docsUrl: string;
     supportsStreaming: boolean;
     models: ModelDefinition[];

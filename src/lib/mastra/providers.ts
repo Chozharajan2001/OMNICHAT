@@ -17,10 +17,13 @@ export interface ProviderDefinition {
     icon: string;
     /** Link to provider website */
     website: string;
-    /** Placeholder shown in the API key input */
+    /**
+     * Placeholder shown in the API key input. There is deliberately no key
+     * shape pattern: nothing enforced one, and enforcing a guessed prefix would
+     * refuse a valid key the day a provider changed it. The real signal is the
+     * "stored, unvalidated" state until Verify confirms the key.
+     */
     keyPlaceholder: string;
-    /** Pattern used for client‑side validation of the key */
-    keyPattern: RegExp;
     /** Link to provider's API key docs */
     docsUrl: string;
     /** Whether the provider supports streaming responses */
@@ -73,7 +76,6 @@ export const SUPPORTED_PROVIDERS: ProviderDefinition[] = [
         icon: "/icons/openai.svg",
         website: "https://openai.com",
         keyPlaceholder: "sk-...",
-        keyPattern: /^sk-[a-zA-Z0-9_-]{20,}$/,
         docsUrl: "https://platform.openai.com/api-keys",
         supportsStreaming: true,
         models: [
@@ -122,7 +124,6 @@ export const SUPPORTED_PROVIDERS: ProviderDefinition[] = [
         icon: "/icons/anthropic.svg",
         website: "https://anthropic.com",
         keyPlaceholder: "sk-ant-...",
-        keyPattern: /^sk-ant-[a-zA-Z0-9_-]{30,}$/,
         docsUrl: "https://console.anthropic.com/settings/keys",
         supportsStreaming: true,
         models: [
@@ -170,7 +171,6 @@ export const SUPPORTED_PROVIDERS: ProviderDefinition[] = [
         icon: "/icons/google.svg",
         website: "https://ai.google.dev",
         keyPlaceholder: "AIza...",
-        keyPattern: /^AIza[a-zA-Z0-9_-]{30,}$/,
         docsUrl: "https://aistudio.google.com/app/apikey",
         supportsStreaming: true,
         models: [
@@ -207,7 +207,6 @@ export const SUPPORTED_PROVIDERS: ProviderDefinition[] = [
         icon: "/icons/mistral.svg",
         website: "https://mistral.ai",
         keyPlaceholder: "...",
-        keyPattern: /.+/,
         docsUrl: "https://console.mistral.ai/api-keys",
         supportsStreaming: true,
         models: [
@@ -255,7 +254,6 @@ export const SUPPORTED_PROVIDERS: ProviderDefinition[] = [
         icon: "/icons/groq.svg",
         website: "https://groq.com",
         keyPlaceholder: "gsk_...",
-        keyPattern: /^gsk_[a-zA-Z0-9_-]{30,}$/,
         docsUrl: "https://console.groq.com/keys",
         supportsStreaming: true,
         models: [
@@ -292,7 +290,6 @@ export const SUPPORTED_PROVIDERS: ProviderDefinition[] = [
         icon: "/icons/xai.svg",
         website: "https://x.ai",
         keyPlaceholder: "xai-...",
-        keyPattern: /^xai-[a-zA-Z0-9_-]{30,}$/,
         docsUrl: "https://console.x.ai/keys",
         supportsStreaming: true,
         models: [
@@ -329,7 +326,6 @@ export const SUPPORTED_PROVIDERS: ProviderDefinition[] = [
         icon: "/icons/deepseek.svg",
         website: "https://deepseek.com",
         keyPlaceholder: "sk-...",
-        keyPattern: /^sk-[a-zA-Z0-9]{30,}$/,
         docsUrl: "https://platform.deepseek.com/api-keys",
         supportsStreaming: true,
         models: [
@@ -366,7 +362,6 @@ export const SUPPORTED_PROVIDERS: ProviderDefinition[] = [
         icon: "/icons/perplexity.svg",
         website: "https://perplexity.ai",
         keyPlaceholder: "pplx-...",
-        keyPattern: /^pplx-[a-zA-Z0-9_-]{30,}$/,
         docsUrl: "https://www.perplexity.ai/settings/api",
         supportsStreaming: true,
         models: [
@@ -403,7 +398,6 @@ export const SUPPORTED_PROVIDERS: ProviderDefinition[] = [
         icon: "/icons/nvidia.svg",
         website: "https://build.nvidia.com",
         keyPlaceholder: "Enter your NVIDIA API key (starts with nvapi-)",
-        keyPattern: /^nvapi-[a-zA-Z0-9_-]{80,}$/,
         docsUrl: "https://build.nvidia.com/explore/discover",
         supportsStreaming: true,
         models: [
