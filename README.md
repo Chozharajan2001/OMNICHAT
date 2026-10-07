@@ -236,9 +236,12 @@ a generated client must match the adapter the container uses at runtime.
 
 ## Platform hosting (Railway and Render)
 
-`railway.json` and `render.yaml` build this Dockerfile. Both are **untested from
-this repository's environment** — there is no Docker daemon and no account here —
-so treat a first deploy as a verification run against `/api/health` rather than
+`railway.json` and `render.yaml` build this Dockerfile. The image itself is now
+boot-verified from this repository: both compose stacks were built and started from a
+clean state, `/api/health` answered `200 healthy` on SQLite and on PostgreSQL, and the
+one-off `docker run` shown below created the 9 expected tables in an empty database.
+What remains untested is the platform side — no Railway or Render account has run these
+files — so treat a first deploy as a verification run against `/api/health` rather than
 as a done deal.
 
 Three things the compose stacks do that these platforms do not do for you:

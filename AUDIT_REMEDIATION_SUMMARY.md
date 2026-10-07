@@ -1221,6 +1221,15 @@ outside the browser, an unauthenticated foreign-`Origin` POST is answered
 session cookie cannot be lifted from the page to replay a foreign origin. That
 branch remains covered by `src/app/api/mutations.test.ts`.
 
+**The platform one-off, also run.** `README:249-258` tells a Railway or Render
+operator to `docker build --target migrate` and `docker run --rm -e
+DATABASE_URL=… omnichat-migrate` because the runner image cannot do it. Both
+halves of that instruction were measured: inside the app image `pnpm` and the
+`prisma` CLI are absent and there is no `scripts/` directory, and against an
+empty Postgres the one-off exited 0 and left the expected **9 tables**. So the
+runbook is correct as written, and the README's remaining caveat is only that
+no platform account has executed these files.
+
 **Teardown.** Both stacks `down -v`, the accidental data volume removed, the
 throwaway accounts gone with their volumes, and every generated secret and
 password file deleted. Built images were kept as cache. Docker Desktop was left
