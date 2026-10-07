@@ -854,3 +854,21 @@ describe("POST /api/chat - a named conversation is never silently forked (2.3)",
         expect(mocks.getConversationWithMessages).not.toHaveBeenCalled();
     });
 });
+
+describe("POST /api/chat - the model pair must exist in the registry (2.4)", () => {
+    it.each([
+        { providerId: "not-a-provider", modelId: "gpt-4o" },
+        { providerId: "openai", modelId: "gpt-99-ultra" },
+    ])("rejects %o with 400 before the key vault or the SDK", async (pair) => {
+        const response = await POST(request(pair));
+
+        expect(response.status).toBe(400);
+        const body = await response.json();
+        expect(body.error).toBe("Invalid request");
+        expect(Array.isArray(body.details)).toBe(true);
+        // Previously an unknown provider threw inside createLanguageModel and an
+        // unknown model failed at request time: both reached the user as a 500.
+        expect(mocks.getDecryptedKey).not.toHaveBeenCalled();
+        expectNoProviderStart();
+    });
+});

@@ -6,32 +6,56 @@
 // ────────────────────────────────────────────────────────────────
 
 import { z } from "zod";
+import { getModel, getProvider } from "@/lib/mastra/providers";
 
 /* ────────────────────────────────────────────────────────────────
    Chat request (POST /api/chat)
    ──────────────────────────────────────────────────────────────── */
-export const chatRequestSchema = z.object({
-    messages: z
-        .array(
-            z.object({
-                role: z.enum(["system", "user", "assistant"]),
-                content: z.string().min(1).max(100000),
-            })
-        )
-        .min(1)
-        .max(100), // Limit message array to 100 messages per request
-    providerId: z.string().min(1).max(64),
-    modelId: z.string().min(1).max(200),
-    conversationId: z.string().cuid().nullable().optional(),
-    privateMode: z.boolean().optional().default(false),
-    temperature: z.number().min(0).max(2).optional().default(0.7),
-    maxTokens: z.number().min(1).max(200000).optional().default(4096),
-    systemPrompt: z.string().max(10000).optional(),
-    // H7: chat-started can attach a new conversation to a project/folder;
-    // ownership is verified server-side inside createConversation.
-    projectId: z.string().cuid().optional(),
-    folderId: z.string().cuid().optional(),
-});
+export const chatRequestSchema = z
+    .object({
+        messages: z
+            .array(
+                z.object({
+                    role: z.enum(["system", "user", "assistant"]),
+                    content: z.string().min(1).max(100000),
+                })
+            )
+            .min(1)
+            .max(100), // Limit message array to 100 messages per request
+        providerId: z.string().min(1).max(64),
+        modelId: z.string().min(1).max(200),
+        conversationId: z.string().cuid().nullable().optional(),
+        privateMode: z.boolean().optional().default(false),
+        temperature: z.number().min(0).max(2).optional().default(0.7),
+        maxTokens: z.number().min(1).max(200000).optional().default(4096),
+        systemPrompt: z.string().max(10000).optional(),
+        // H7: chat-started can attach a new conversation to a project/folder;
+        // ownership is verified server-side inside createConversation.
+        projectId: z.string().cuid().optional(),
+        folderId: z.string().cuid().optional(),
+    })
+    // The pair must exist in the registry before it reaches the SDK. Without
+    // this, an unknown provider threw inside createLanguageModel and an unknown
+    // model failed at request time -- both surfaced to the user as a 500 for
+    // what is a bad request. Enforcing it here (rather than in the handler)
+    // also means every future consumer of this schema inherits the guarantee.
+    .superRefine((value, ctx) => {
+        if (!getProvider(value.providerId)) {
+            ctx.addIssue({
+                code: "custom",
+                path: ["providerId"],
+                message: `Unknown provider: ${value.providerId}`,
+            });
+            return;
+        }
+        if (!getModel(value.providerId, value.modelId)) {
+            ctx.addIssue({
+                code: "custom",
+                path: ["modelId"],
+                message: `Unknown model for ${value.providerId}: ${value.modelId}`,
+            });
+        }
+    });
 
 export type ChatRequest = z.infer<typeof chatRequestSchema>;
 
