@@ -1329,7 +1329,45 @@ Found while running the runbook and fixed in `0c4b63d`: an empty password made
 
 ---
 
-*Updated October 7, 2026 (Phase 13)*
+## Phase 14: The key vault, proven on the production image (October 7, 2026)
+
+Encryption at rest had been asserted from unit tests only. It was exercised
+end to end against the booted container, with `validate: false` so the run made
+**no outbound request** to any provider.
+
+* A key saved through `POST /api/api-keys` lands in `user_api_keys` as a
+  `v2:` envelope, 136 characters, and **neither plaintext value appears in the
+  stored column** (checked by reading the row from inside the container with
+  `@libsql/client`). `isValid` is 0 and `lastValidatedAt` null for an
+  unvalidated save.
+* Neither `POST` nor `GET /api/api-keys` echoes the key: the response carries
+  `keyHint: "...-key"` only.
+* `providerId: "not-a-provider"` → **400**. The registry whitelist 3.5 asked for
+  is enforced at the boundary.
+* The 3.5 state renders on the built bundle: **"Stored, not verified"**,
+  "Saved encrypted but never confirmed with the provider, so chats routed to it
+  may fail", a "Verify with provider" action, and a masked hint.
+
+**What this run turned up.** A key shaped `totally-not-a-key` was accepted, so
+the question became who enforces the registry's `keyPattern` -- and the answer
+was nobody: declared twice, set on all nine providers, read by nothing, pinned by
+no test. Removed in `83137a1` rather than enforced, because the patterns are
+guesses and a wrong guess refuses a valid key (mistral's was "match anything"
+while the others demand prefix and length). A shape hint belongs client-side as
+advice, which is a feature and stays in Phase 5.
+
+**Still not proven, on purpose.** The decrypt-on-read path is only reachable
+through a provider call, so it would have sent a fabricated credential to a third
+party from this network; not done unasked. Same for the Phase 3 gate's
+"chat 3 turns" and Phase 2.1's context answer -- both need a real key.
+
+Harness note: leaving Docker Desktop running while the suite executes starves it
+(heap OOM, exit 1 after 22 of 43 files). Tear the stack down and close the app
+before running gates; then 43/43 and 1064 tests pass.
+
+---
+
+*Updated October 7, 2026 (Phase 14)*
 *Branch: release/host-readiness*
-*Phase 2's verify steps were executed on the production image; 2.3's 404 response remains unit-covered (no API key on the test container)*
-*Plan status: Phases 0-4 complete except item 6 (tag/push/PR); Phase 5 is post-host by design*
+*Vault: ciphertext-only at rest, no plaintext on the wire, providerId whitelist enforced*
+*Plan status: Phases 0-4 complete except item 6 (tag/push/PR, an owner order); Phase 5 is post-host by design*
