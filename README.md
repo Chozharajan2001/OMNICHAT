@@ -197,11 +197,32 @@ The password is never accepted as a flag — argv leaks into shell history and t
 process table. Alternatively enable email verification (SMTP vars) and register
 through the UI.
 
-`/api/metrics` is token-protected: set `METRICS_TOKEN` to allow Prometheus
-scrapes via `Authorization: Bearer <token>`; in production an unset token
-makes the endpoint respond 404. The path is exempt from the session guard
-(`src/proxy.ts`) precisely so that a scraper can reach it - the bearer token
-is its only gate.
+`/api/metrics` is token-protected, and the gate depends on whether a token is
+configured at all:
+
+| `METRICS_TOKEN` | `Authorization: Bearer` | result |
+|---|---|---|
+| set | matches | 200, Prometheus text |
+| set | missing or wrong | 404 (no 401 - the endpoint does not announce itself) |
+| unset | any | 200 in development, **404 in production** |
+
+The path is exempt from the session guard (`src/proxy.ts`) precisely so that a
+scraper can reach it without a session; the bearer token is its only gate. Note
+the third row: an unset token leaves the endpoint open in development, so do not
+expose a dev server.
+
+Scraped live on an idle instance with a correct token: `200`,
+`content-type: text/plain; version=0.0.4`, **empty body**. That is not a broken
+endpoint - the registry creates series lazily, so a process that has served
+nothing publishes nothing.
+
+**Which metrics actually get recorded.** Only `recordChatMessage` has a production
+caller (`src/app/api/chat/route.ts`, on a successful turn).
+`recordHttpRequest`, `recordRateLimitRejection` and `recordAuthAttempt` are
+exported and unit-tested, but **no request path calls them** - so even a busy
+instance publishes chat counters only, and never any traffic, rate-limit or
+sign-in series. Wiring them means calling them from the route guard and the auth
+callbacks; until then, do not build a dashboard panel on those names.
 
 Publish the real origin. Both compose stacks default `NEXTAUTH_URL` to
 `http://localhost:3000`, so on any other host set `NEXTAUTH_URL` (and
