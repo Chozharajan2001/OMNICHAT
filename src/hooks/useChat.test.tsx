@@ -33,7 +33,11 @@ interface SentBody {
 }
 
 function captureFetch() {
-    const mock = vi.fn(async () => new Response("", { status: 200 }));
+    // Typed via the generic so the stub keeps fetch's signature without
+    // declaring parameters it never reads.
+    const mock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
+        async () => new Response("", { status: 200 })
+    );
     vi.stubGlobal("fetch", mock);
     return mock;
 }
@@ -44,9 +48,9 @@ function readBody(mock: ReturnType<typeof captureFetch>): SentBody {
 }
 
 const prior = [
-    { id: "m1", role: "user" as const, content: "What is the refund policy?" },
-    { id: "m2", role: "assistant" as const, content: "It covers 30 days." },
-    { id: "m3", role: "user" as const, content: "And after that?" },
+    { id: "m1", role: "user" as const, content: "What is the refund policy?", createdAt: "2026-10-05T08:00:00.000Z" },
+    { id: "m2", role: "assistant" as const, content: "It covers 30 days.", createdAt: "2026-10-05T08:00:05.000Z" },
+    { id: "m3", role: "user" as const, content: "And after that?", createdAt: "2026-10-05T08:01:00.000Z" },
 ];
 
 beforeEach(() => {
