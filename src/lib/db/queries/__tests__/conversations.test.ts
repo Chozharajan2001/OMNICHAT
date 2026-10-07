@@ -13,6 +13,7 @@ const mockPrisma = vi.hoisted(() => ({
             (args: Prisma.ConversationFindUniqueArgs) => Promise<Conversation | ConversationWithMessages | null>
         >(),
         findMany: vi.fn<(args: Prisma.ConversationFindManyArgs) => Promise<ConversationWithMessages[]>>(),
+        findFirst: vi.fn<(args: Prisma.ConversationFindFirstArgs) => Promise<{ id: string } | null>>(),
         update: vi.fn<(args: Prisma.ConversationUpdateArgs) => Promise<Conversation>>(),
         delete: vi.fn<(args: Prisma.ConversationDeleteArgs) => Promise<Conversation>>(),
         deleteMany: vi.fn<(args: Prisma.ConversationDeleteManyArgs) => Promise<Prisma.BatchPayload>>(),
@@ -26,6 +27,8 @@ vi.mock("@/lib/db/prisma", () => ({ prisma: mockPrisma }));
 
 import {
     createConversation,
+    getConversations,
+    findConversationCursor,
     getConversationWithMessages,
     updateConversation,
     deleteConversation,
@@ -399,5 +402,86 @@ describe("Conversation Queries", () => {
                 deleteConversation("conv-123", "user-123")
             ).rejects.toThrow("Conversation not found or access denied");
         });
+    });
+});
+
+describe("getConversations pagination contract (2.5)", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    function row(id: string) {
+        return {
+            id,
+            userId: "user-123",
+            title: id,
+            providerId: "openai",
+            modelId: "gpt-4o",
+            systemPrompt: null,
+            projectId: null,
+            archivedAt: null,
+            createdAt: new Date("2026-10-05T08:00:00.000Z"),
+            updatedAt: new Date("2026-10-05T08:00:00.000Z"),
+            messages: [],
+        } as unknown as ConversationWithMessages;
+    }
+
+    it("seeks by the unique id and orders with a tiebreaker", async () => {
+        mockPrisma.conversation.findMany.mockResolvedValueOnce([]);
+
+        await getConversations("user-123", 2, { id: "conv-anchor" });
+
+        const args = mockPrisma.conversation.findMany.mock.calls[0][0];
+        expect(args.cursor).toEqual({ id: "conv-anchor" });
+        // updatedAt alone is not unique: two rows touched in the same instant
+        // tie, and a page resuming at a tie either repeats or skips a row.
+        expect(args.orderBy).toEqual([{ updatedAt: "desc" }, { id: "desc" }]);
+    });
+
+    it("hands back only the id as the next cursor", async () => {
+        mockPrisma.conversation.findMany.mockResolvedValueOnce([row("a"), row("b"), row("c")]);
+
+        const page = await getConversations("user-123", 2);
+
+        expect(page.conversations.map((c) => c.id)).toEqual(["a", "b"]);
+        expect(page.nextCursor).toEqual({ id: "c" });
+        // Prisma seeks INCLUSIVE of the cursor row, so the popped lookahead is
+        // the row the next page starts at and no skip may accompany it: pairing
+        // that cursor with skip:1 drops one conversation per page boundary.
+        expect(mockPrisma.conversation.findMany.mock.calls[0][0].skip).toBeUndefined();
+    });
+
+    it("ends the page when there is no extra row", async () => {
+        mockPrisma.conversation.findMany.mockResolvedValueOnce([row("a")]);
+
+        const page = await getConversations("user-123", 2);
+
+        expect(page.nextCursor).toBeNull();
+    });
+});
+
+describe("findConversationCursor (2.5)", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it("resolves a cursor only against rows the caller owns", async () => {
+        mockPrisma.conversation.findFirst.mockResolvedValueOnce({ id: "c-anchor" });
+
+        const cursor = await findConversationCursor("user-123", "c-anchor");
+
+        expect(cursor).toEqual({ id: "c-anchor" });
+        // Ownership lives in the lookup itself: a cursor naming someone else's
+        // row must not resolve, or their list would be seeked from that row.
+        expect(mockPrisma.conversation.findFirst.mock.calls[0][0].where).toEqual({
+            userId: "user-123",
+            id: "c-anchor",
+        });
+    });
+
+    it("resolves to null for a cursor that names no owned row", async () => {
+        mockPrisma.conversation.findFirst.mockResolvedValueOnce(null);
+
+        await expect(findConversationCursor("user-123", "c-gone")).resolves.toBeNull();
     });
 });

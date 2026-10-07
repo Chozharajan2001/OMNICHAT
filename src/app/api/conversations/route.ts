@@ -12,10 +12,33 @@ import {
     getConversations,
     createConversation,
     deleteAllConversations,
+    findConversationCursor,
 } from "@/lib/db/queries/conversations";
 import { createConversationSchema } from "@/lib/validators/schemas";
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
 import { MIN_PAGE_SIZE, MAX_PAGE_SIZE, DEFAULT_PAGE_SIZE } from "@/lib/constants";
+
+type CursorParse = { ok: true; cursor?: { id: string } } | { ok: false };
+
+/**
+ * A cursor is its own unique id and nothing else. Measured against the SQLite
+ * database, the shape this replaces failed in two ways: a garbage
+ * `cursorUpdatedAt` reached `new Date()` and Prisma answered
+ * PrismaClientValidationError, which the handler reported as a 500 for what the
+ * client caused; and a request with `cursorId` but no `cursorUpdatedAt` built no
+ * cursor at all, so the client was silently handed page one again and paged
+ * forever. A cursor that points at nothing (or at another user's conversation)
+ * seeks to an empty page with no nextCursor, which the client reads as "no more
+ * conversations" and silently stops -- so the id is resolved to a row this user
+ * owns before it is used.
+ */
+async function readCursor(userId: string, raw: string | null): Promise<CursorParse> {
+    if (!raw) return { ok: true };
+    const parsed = z.string().cuid().safeParse(raw);
+    if (!parsed.success) return { ok: false };
+    const cursor = await findConversationCursor(userId, parsed.data);
+    return cursor ? { ok: true, cursor } : { ok: false };
+}
 
 export async function GET(req: Request) {
     try {
@@ -38,14 +61,17 @@ export async function GET(req: Request) {
         }
         
         const cursorId = searchParams.get("cursorId");
-        const cursorUpdatedAt = searchParams.get("cursorUpdatedAt");
         const archived = searchParams.get("archived") === "true";
+        const parsedCursor = await readCursor(session.user.id, cursorId);
 
-        const cursor = cursorId && cursorUpdatedAt
-            ? { id: cursorId, updatedAt: new Date(cursorUpdatedAt) }
-            : undefined;
+        if (!parsedCursor.ok) {
+            return NextResponse.json(
+                { error: "Invalid cursor" },
+                { status: 400, headers: { "Cache-Control": "no-store" } }
+            );
+        }
 
-        const result = await getConversations(session.user.id, limit, cursor, { archived });
+        const result = await getConversations(session.user.id, limit, parsedCursor.cursor, { archived });
         return NextResponse.json(result);
     } catch (error: unknown) {
         console.error("Failed to fetch conversations:", error);

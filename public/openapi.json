@@ -324,19 +324,10 @@
             "name": "cursorId",
             "in": "query",
             "required": false,
-            "description": "Conversation id from a previous nextCursor.",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "cursorUpdatedAt",
-            "in": "query",
-            "required": false,
-            "description": "ISO timestamp paired with cursorId.",
+            "description": "Conversation id from a previous nextCursor. An id that is malformed, or that names no conversation the caller owns, is a 400.",
             "schema": {
               "type": "string",
-              "format": "date-time"
+              "format": "cuid"
             }
           },
           {
@@ -1882,18 +1873,15 @@
       "Cursor": {
         "type": "object",
         "required": [
-          "id",
-          "updatedAt"
+          "id"
         ],
         "properties": {
           "id": {
-            "type": "string"
-          },
-          "updatedAt": {
             "type": "string",
-            "format": "date-time"
+            "format": "cuid"
           }
-        }
+        },
+        "description": "Opaque resume token: the id of the first conversation of the NEXT page. Feed nextCursor.id back as cursorId."
       },
       "Conversation": {
         "type": "object",

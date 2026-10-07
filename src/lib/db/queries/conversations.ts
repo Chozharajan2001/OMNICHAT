@@ -55,19 +55,26 @@ export async function createConversation(
 export async function getConversations(
     userId: string,
     limit = 50,
-    cursor?: { id: string; updatedAt: Date },
+    cursor?: { id: string },
     options?: { archived?: boolean }
 ): Promise<{
     conversations: (Conversation & {
         lastMessage?: Message | null;
     })[];
-    nextCursor?: { id: string; updatedAt: Date } | null;
+    nextCursor?: { id: string } | null;
 }> {
     const where = {
         userId,
         archivedAt: options?.archived ? { not: null } : null,
     };
-    const orderBy = { updatedAt: "desc" as const };
+    // updatedAt is not unique, so ordering by it alone is not a total order:
+    // SQL leaves the relative position of tied rows up to the engine, which is
+    // the property a page boundary must not depend on. Measured on SQLite +
+    // Prisma 7 the tied rows still came back in a stable order, so this
+    // tiebreaker is determinism insurance rather than a reproduced-duplicate
+    // fix; it also lets the cursor be the unique id instead of an
+    // (id, timestamp) pair the client has to echo back verbatim.
+    const orderBy = [{ updatedAt: "desc" as const }, { id: "desc" as const }];
 
     const conversations = await prisma.conversation.findMany({
         where,
@@ -87,7 +94,7 @@ export async function getConversations(
     if (conversations.length > limit) {
         const next = conversations.pop(); // remove the extra one
         if (next) {
-            nextCursor = { id: next.id, updatedAt: next.updatedAt };
+            nextCursor = { id: next.id };
         }
     }
 
@@ -98,6 +105,25 @@ export async function getConversations(
     }));
 
     return { conversations: enriched, nextCursor };
+}
+
+/**
+ * Resolve a pagination cursor to a row the caller owns, or null. A cursor id
+ * that names no row is not an error inside Prisma -- the seek simply returns an
+ * empty page with no nextCursor, which a client reads as "end of the list" and
+ * stops, silently dropping everything after the gap. Naming another user's row
+ * has the same shape. Both are callers' bugs, so the cursor is authenticated
+ * against its owner here instead of being guessed at from a Prisma error code.
+ */
+export async function findConversationCursor(
+    userId: string,
+    id: string
+): Promise<{ id: string } | null> {
+    const row = await prisma.conversation.findFirst({
+        where: { userId, id },
+        select: { id: true },
+    });
+    return row ? { id: row.id } : null;
 }
 
 /**
