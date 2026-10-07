@@ -73,7 +73,19 @@ describe("preferencesSchema defaults against the registry (3.6)", () => {
         expect(parsed.error.issues.map((issue) => issue.path.join("."))).toContain("defaultModelId");
     });
 
-    it("checks a model only alongside the provider it was sent with", () => {
-        expect(preferencesSchema.safeParse({ defaultModelId: "gpt-4o" }).success).toBe(true);
+    // The rule here used to be "check a model only alongside the provider it was
+    // sent with", which let { defaultModelId: "gpt-4o" } through with nothing
+    // checked against the registry. Half a pair is not a third of a default: a
+    // lone provider would leave the stored model naming the previous one.
+    it("refuses either half of the default pair sent alone", () => {
+        const modelOnly = preferencesSchema.safeParse({ defaultModelId: "gpt-4o" });
+        const providerOnly = preferencesSchema.safeParse({ defaultProviderId: "openai" });
+
+        expect(modelOnly.success).toBe(false);
+        expect(providerOnly.success).toBe(false);
+        if (modelOnly.success || providerOnly.success) return;
+        // Filed against the half that is missing.
+        expect(modelOnly.error.issues.map((issue) => issue.path.join("."))).toContain("defaultProviderId");
+        expect(providerOnly.error.issues.map((issue) => issue.path.join("."))).toContain("defaultModelId");
     });
 });

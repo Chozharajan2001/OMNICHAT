@@ -101,24 +101,41 @@ export const preferencesSchema = z
     // stored happily, then refused by the provider. Same boundary as 2.4 and
     // 3.5: reject at the schema so the handler gains no branch.
     .superRefine((value, ctx) => {
+        const providerId = value.defaultProviderId;
+        const modelId = value.defaultModelId;
         // Both fields are optional: this is a PATCH, so a theme-only update must
         // stay valid. Only a value the client actually sent can be refused.
-        if (value.defaultProviderId === undefined) {
+        if (providerId === undefined && modelId === undefined) {
             return;
         }
-        if (!getProvider(value.defaultProviderId)) {
+        // An unknown provider is named in the body, so it is answered first: it is
+        // the more specific of the two complaints a half pair can raise.
+        if (providerId !== undefined && !getProvider(providerId)) {
             ctx.addIssue({
                 code: "custom",
                 path: ["defaultProviderId"],
-                message: `Unknown provider: ${value.defaultProviderId}`,
+                message: `Unknown provider: ${providerId}`,
             });
             return;
         }
-        if (value.defaultModelId !== undefined && !getModel(value.defaultProviderId, value.defaultModelId)) {
+        // Half a pair is not a third of a default: a lone model id is an unchecked
+        // string, and a lone provider id leaves the stored model naming the previous
+        // provider. Either way the pair is what every new conversation opens with,
+        // so it would save cleanly and fail at the first turn. The issue is filed
+        // against the half that is missing.
+        if (providerId === undefined || modelId === undefined) {
+            ctx.addIssue({
+                code: "custom",
+                path: [providerId === undefined ? "defaultProviderId" : "defaultModelId"],
+                message: "defaultProviderId and defaultModelId must be sent together",
+            });
+            return;
+        }
+        if (!getModel(providerId, modelId)) {
             ctx.addIssue({
                 code: "custom",
                 path: ["defaultModelId"],
-                message: `Unknown model for ${value.defaultProviderId}: ${value.defaultModelId}`,
+                message: `Unknown model for ${providerId}: ${modelId}`,
             });
         }
     });

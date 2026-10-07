@@ -204,7 +204,7 @@
     "/chat": {
       "post": {
         "summary": "Stream a chat completion",
-        "description": "Validates the request, decrypts the stored provider key server-side, calls the provider and streams the reply as a plain-text token stream (not JSON). The user message is persisted BEFORE the provider is called, the assistant reply and `Conversation.updatedAt` are written when the stream finishes, and a stopped stream still stores the partial reply; a turn is never persisted twice. Prompt history is rebuilt from the database plus the incoming user message - the client transcript is not trusted. `privateMode` skips all persistence. Never echoes the API key.",
+        "description": "Validates the request, decrypts the stored provider key server-side, calls the provider and streams the reply as a plain-text token stream (not JSON). The user message is persisted BEFORE the provider is called, the assistant reply and `Conversation.updatedAt` are written when the stream finishes, and a stopped stream still stores the partial reply; a turn is never persisted twice. Prompt history is rebuilt from the database plus the incoming user message - the client transcript is not trusted. `privateMode` skips all persistence and is the one case where the request transcript is the conversation, which is why the array is capped: the client sends at most `maxItems` messages and drops the oldest to stay under it. Never echoes the API key.",
         "operationId": "streamChat",
         "tags": [
           "Chat"
@@ -222,7 +222,7 @@
         },
         "responses": {
           "200": {
-            "description": "Plain-text streamed completion.",
+            "description": "Plain-text streamed completion. If the provider fails part-way, the notice is appended to the body after the marker line `[[omnichat:stream-error]]` (200 stays 200 because the SDK already sent the headers): everything before the marker is the answer, everything after it is a transport failure and belongs in an error channel, not in the assistant history.",
             "headers": {
               "X-Conversation-Id": {
                 "schema": {
@@ -2235,13 +2235,15 @@
       },
       "PreferencesUpdate": {
         "type": "object",
-        "description": "Every field optional; the PATCH is a partial upsert.",
+        "description": "Every field optional; the PATCH is a partial upsert. The two default-model fields are the exception: they are validated as a pair against the provider registry, so sending one without the other is a 400 rather than a half-applied default every new conversation would open with.",
         "properties": {
           "defaultProviderId": {
-            "type": "string"
+            "type": "string",
+            "description": "Must be a provider in the registry, and must be sent with defaultModelId."
           },
           "defaultModelId": {
-            "type": "string"
+            "type": "string",
+            "description": "Must be a model of the supplied defaultProviderId, and must be sent with it."
           },
           "defaultSystemPrompt": {
             "type": "string",
