@@ -1242,6 +1242,58 @@ and Phase 5 (explicitly post-host).
 
 ---
 
-*Updated October 7, 2026 (Phase 12)*
+## Phase 13: Plan-item audit against the current tree (October 7, 2026)
+
+Every numbered item in the execution plan was re-checked against the code and
+the measured runs, not against this ledger's own claims. Evidence per item:
+
+| Plan item | Where it lives | How it was confirmed |
+|---|---|---|
+| 1.1–1.5 host wiring | both compose files, `render.yaml`, `railway.json`, `.env.example`, README runbook | exit gate run in Phase 12 |
+| 2.1 private multi-turn | `useChat.buildTranscript` + `CHAT_MAX_REQUEST_MESSAGES` | unit tests; live request carried the transcript |
+| 2.2 conversation-id race | `useChat.pickConversationId` | unit test "targets the conversation the route segment names" |
+| 2.3 bad id → 404 | chat route + `mutations.test.ts` | unit + live anon/auth matrix |
+| 2.4 provider/model → 400 | `schemas.ts` superRefine registries | unit + live PATCH matrix |
+| 2.5 cursor hardening | `conversations.ts` / list route | unit tests keyed on measured Prisma seek semantics |
+| 2.6 CSRF on mutations | `src/proxy.ts` guard | **created/archive/delete all 2xx on the built image** with `APP_ORIGIN` set |
+| 3.1 sidebar refresh | `ChatContainer.handleTurnComplete` | unit test "announces the conversation the route created" |
+| 3.2 composer during stream | `ChatInput.tsx:77` (`disabled` prop, not `isLoading`) | source read; Stop swaps in at `:87` |
+| 3.3 failure toasts | `ConversationSidebar.tsx:160,189,209` | source read + Phase 3 live pass |
+| 3.4 duplicate project → 400 | projects route + schema | **measured on PostgreSQL: 400** |
+| 3.5 unvalidated-key UX + whitelist | providers page `keyState`, `saveKeySchema` | unit + Phase 3 live pass |
+| 3.6 preferences atomicity | dirty tracking + pair validation | `b92e50d`, `2bf9ff5`, live 6-body PATCH matrix |
+| 3.7 ModelSelector guard | `loading` branch first, `splitModelValue` | unit tests |
+| 3.8 search story | `SIDEBAR_CONVERSATION_LIMIT` in the list fetch | source read; server `?q=` stays in Phase 5 |
+| 4.1 OAuth conditional | login `page.tsx` env check + `OAuthSection` | **no OAuth buttons rendered on the built image** |
+| 4.2 version single source | `src/lib/version.ts` ← `package.json` | container reported `0.1.0`; about and health both import it |
+| 4.3 chats page copy/grid | `ConfirmDialog` text, `isLoadingArchived` skeleton branch | source read |
+| 4.4 metrics | `METRICS_TOKEN` matrix, `src/lib/metrics.ts` | measured live: no token **404**, token **200 with a 0-byte body** |
+| 4.5 README | hosting section | source read; no deploy badge, deliberately |
+| 4.6 tag/push/PR | — | **not done: an owner decision** |
+
+**One deviation from the plan's prescribed mechanism, recorded so it is not
+mistaken for an oversight.** 2.2 said "disable submit until `loadConversation`
+settles". The fix instead made the URL authoritative (`pickConversationId`), so
+a send that races the load targets the conversation the route segment names. A
+disabled composer was the wrong lever here: 3.2 requires the composer to stay
+usable while a stream is in flight, and gating it on a loader reintroduces the
+lock the user complained about. Both directions are covered by tests.
+
+**A doc defect found by this audit, now fixed.** `openapi.json` described a
+successful `/metrics` scrape with the example
+`omnichat_http_requests_total 12`. No such series is produced: the collector has
+no `omnichat_` prefix, and `recordHttpRequest`, `recordRateLimitRejection` and
+`recordAuthAttempt` have no production caller -- only `recordChatMessage` does.
+The replacement example is the exposition the code actually renders, captured by
+running `recordChatMessage` and printing `metrics.getMetrics()`, and the 200
+description now says plainly that an idle instance scrapes empty. This survived
+because `openapi-contract.test.ts` checks paths and methods, not examples
+(28 tests, still green after the change).
+
+Gates after this phase: `tsc` 0, `quality:check` 0, openapi contract 28/28.
+
+---
+
+*Updated October 7, 2026 (Phase 13)*
 *Branch: release/host-readiness*
-*Tests: 1064 passing across 43 files; both compose stacks booted and gated*
+*Plan status: Phases 0-4 complete except item 6 (tag/push/PR); Phase 5 is post-host by design*

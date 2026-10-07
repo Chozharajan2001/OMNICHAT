@@ -137,7 +137,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Metrics in Prometheus text format.",
+            "description": "Metrics in Prometheus text format. The registry is lazy: series appear only once something has recorded them, and the only production recorder is `recordChatMessage` on a successful chat turn, so a fresh or chat-idle instance answers 200 with an empty body. `recordHttpRequest`, `recordRateLimitRejection` and `recordAuthAttempt` exist and are unit-tested but no request path calls them, so there are no traffic, rate-limit or sign-in series.",
             "headers": {
               "Cache-Control": {
                 "schema": {
@@ -151,7 +151,7 @@
                 "schema": {
                   "type": "string"
                 },
-                "example": "# TYPE omnichat_http_requests_total counter\nomnichat_http_requests_total 12\n"
+                "example": "# TYPE chat_messages_total counter\nchat_messages_total{providerId=\"openai\",modelId=\"gpt-4o\"} 1\n# TYPE chat_tokens_total counter\nchat_tokens_total{providerId=\"openai\",modelId=\"gpt-4o\",type=\"input\"} 120\nchat_tokens_total{providerId=\"openai\",modelId=\"gpt-4o\",type=\"output\"} 48\n# TYPE chat_duration_seconds histogram\nchat_duration_seconds{providerId=\"openai\",modelId=\"gpt-4o\"} 1.75\n"
               }
             }
           },
