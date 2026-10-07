@@ -5,6 +5,7 @@ import { ArrowDown } from "lucide-react";
 import { MessageBubble } from "./MessageBubble";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePersonalizationStore } from "@/stores/personalization-store";
+import { DEFAULT_WELCOME_MESSAGE } from "@/lib/constants";
 
 interface Message {
     id: string;
@@ -52,12 +53,20 @@ function MessageSkeleton() {
     );
 }
 
+// Module scope: MessageList's own branches are all spent, and a read-time
+// fallback belongs to the value, not to the component.
+function greetingFor(saved: string): string {
+    return saved || DEFAULT_WELCOME_MESSAGE;
+}
+
 export function MessageList({ messages, isLoading, isInitialLoading, showTokenCount = false }: MessageListProps) {
     const scrollRef = useRef<HTMLDivElement>(null);
     const stickToBottom = useRef(true);
     const [awayFromBottom, setAwayFromBottom] = useState(false);
     const chatDensity = usePersonalizationStore((state) => state.chatDensity);
-    const welcomeMessage = usePersonalizationStore((state) => state.welcomeMessage);
+    // An empty greeting is the user's own saved value; the default sentence is
+    // applied here at read time instead of being written back into storage.
+    const welcomeMessage = usePersonalizationStore((state) => greetingFor(state.welcomeMessage));
 
     const scrollToLatest = useCallback(() => {
         const el = scrollRef.current;

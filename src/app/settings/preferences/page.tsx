@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { usePreferences } from "@/hooks/usePreferences";
-import { DEFAULT_USER_PREFERENCES } from "@/lib/constants";
+import { DEFAULT_USER_PREFERENCES, DEFAULT_WELCOME_MESSAGE } from "@/lib/constants";
 import type { UserPreference } from "@/types";
 import {
     type AppLanguage,
@@ -35,6 +35,71 @@ const LANGUAGE_OPTIONS: { value: AppLanguage; label: string; note: string }[] = 
     { value: "en-GB", label: "English (UK)", note: "Same strings, British document language" },
     { value: "ta-IN", label: "Tamil (India)", note: "Read and hyphenated as Tamil; interface strings stay English" },
 ];
+
+// The page component had reached its complexity budget, so the unsaved-changes
+// comparison lives in module scope: two values are rendered as one canonical
+// string and compared, which keeps every branch out of the component.
+interface FormValues {
+    providerId: string;
+    modelId: string;
+    systemPrompt: string;
+    theme: string;
+    sendWithEnter: boolean;
+    showTokenCount: boolean;
+    welcome: string;
+}
+
+function valuesSignature(values: FormValues): string {
+    return JSON.stringify(values);
+}
+
+function savedSignatureOf(initial: PreferenceValues, welcome: string): string {
+    return valuesSignature({
+        providerId: initial.defaultProviderId || "openai",
+        modelId: initial.defaultModelId || "",
+        systemPrompt: initial.defaultSystemPrompt ?? "",
+        theme: initial.theme,
+        sendWithEnter: initial.sendWithEnter ?? true,
+        showTokenCount: initial.showTokenCount ?? false,
+        welcome,
+    });
+}
+
+interface HeaderProps {
+    isDirty: boolean;
+    isSaving: boolean;
+    onSave: () => void;
+}
+
+function PreferencesHeader({ isDirty, isSaving, onSave }: HeaderProps) {
+    return (
+        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div>
+                <div className="section-kicker mb-3">General</div>
+                <h2 className="text-4xl font-semibold tracking-tight">Personalize your desk</h2>
+                <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
+                    Choose the default model behavior, shape your writing style, and make the
+                    workspace feel like your own every time you open it.
+                </p>
+            </div>
+            <div className="flex items-center gap-3">
+                {/* The confirmation card at the foot of the form says a save
+                    happened; nothing said when it had not. */}
+                {isDirty ? (
+                    <span className="text-sm text-muted-foreground">Unsaved changes</span>
+                ) : null}
+                <Button
+                    onClick={onSave}
+                    disabled={!isDirty || isSaving}
+                    className="rounded-full px-5 shadow-[0_16px_30px_var(--shadow-primary)]"
+                >
+                    <Save className="h-4 w-4" />
+                    {isSaving ? "Saving..." : "Save preferences"}
+                </Button>
+            </div>
+        </div>
+    );
+}
 
 export default function PreferencesPage() {
     const { preferences, loading, error, updatePreferences } = usePreferences();
@@ -108,6 +173,23 @@ function PreferencesForm({ initialPreferences, updatePreferences }: {
         ?? availableModels[0]?.id
         ?? "";
 
+    const savedValues = useMemo(
+        () => savedSignatureOf(initialPreferences, welcomeMessage),
+        [initialPreferences, welcomeMessage]
+    );
+    // Compared against what the server actually holds, so a default that no
+    // longer exists in the registry shows as unsaved instead of being quietly
+    // substituted at the next save.
+    const isDirty = valuesSignature({
+        providerId,
+        modelId,
+        systemPrompt: defaultSystemPrompt,
+        theme,
+        sendWithEnter,
+        showTokenCount,
+        welcome: localWelcomeMessage,
+    }) !== savedValues;
+
     useEffect(() => {
         const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
         const applyTheme = () => {
@@ -134,7 +216,10 @@ function PreferencesForm({ initialPreferences, updatePreferences }: {
                 sendWithEnter,
                 showTokenCount,
             });
-            setWelcomeMessage(localWelcomeMessage.trim() || "What do you want to build, compare, or figure out today?");
+            // The server row is the authoritative half and has already landed; a
+            // cleared greeting is stored as empty rather than being repopulated
+            // with the default, which is applied where it is read.
+            setWelcomeMessage(localWelcomeMessage.trim());
             setLocalWelcomeMessage((current) => current === localWelcomeMessage ? null : current);
             setSaveMessage("Preferences updated");
         } catch (cause) {
@@ -146,24 +231,11 @@ function PreferencesForm({ initialPreferences, updatePreferences }: {
 
     return (
         <div className="space-y-8">
-            <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-                <div>
-                    <div className="section-kicker mb-3">General</div>
-                    <h2 className="text-4xl font-semibold tracking-tight">Personalize your desk</h2>
-                    <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
-                        Choose the default model behavior, shape your writing style, and make the
-                        workspace feel like your own every time you open it.
-                    </p>
-                </div>
-                <Button
-                    onClick={handleSave}
-                    disabled={isSaving}
-                    className="rounded-full px-5 shadow-[0_16px_30px_var(--shadow-primary)]"
-                >
-                    <Save className="h-4 w-4" />
-                    {isSaving ? "Saving..." : "Save preferences"}
-                </Button>
-            </div>
+            <PreferencesHeader
+                isDirty={isDirty}
+                isSaving={isSaving}
+                onSave={handleSave}
+            />
 
             <section className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.9fr)]">
                 <div className="space-y-6">
@@ -422,14 +494,15 @@ function PreferencesForm({ initialPreferences, updatePreferences }: {
                     <div className="rounded-[1.75rem] border border-border/70 bg-background/30 p-6">
                         <div className="mb-4 text-lg font-semibold">Welcome message</div>
                         <p className="mb-4 text-sm leading-6 text-muted-foreground">
-                            Set the first line you want to see in the empty chat state.
+                            Set the first line you want to see in the empty chat state. Leave it
+                            empty and the standard greeting is shown.
                         </p>
                         <Textarea
                             value={localWelcomeMessage}
                             onChange={(e) => setLocalWelcomeMessage(e.target.value)}
                             rows={4}
                             className="rounded-[1.5rem] border border-input bg-background/60 p-4"
-                            placeholder="What do you want to build, compare, or figure out today?"
+                            placeholder={DEFAULT_WELCOME_MESSAGE}
                         />
                     </div>
 

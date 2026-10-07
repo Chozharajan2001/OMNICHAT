@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { DEFAULT_WELCOME_MESSAGE } from "@/lib/constants";
 
 export type ChatDensity = "comfortable" | "compact";
 export type AppLanguage = "en-US" | "en-GB" | "ta-IN";
@@ -27,7 +28,7 @@ export const usePersonalizationStore = create<PersonalizationState>()(
             chatDensity: "comfortable",
             privateChatMode: false,
             sidebarDefaultState: "expanded",
-            welcomeMessage: "What do you want to build, compare, or figure out today?",
+            welcomeMessage: DEFAULT_WELCOME_MESSAGE,
             setLanguage: (language) => set({ language }),
             setChatDensity: (chatDensity) => set({ chatDensity }),
             setPrivateChatMode: (privateChatMode) => set({ privateChatMode }),

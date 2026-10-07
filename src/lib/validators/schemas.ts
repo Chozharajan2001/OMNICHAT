@@ -87,14 +87,41 @@ export type SaveKeyRequest = z.infer<typeof saveKeySchema>;
 /* ────────────────────────────────────────────────────────────────
    User preferences (GET/PATCH /api/preferences)
    ──────────────────────────────────────────────────────────────── */
-export const preferencesSchema = z.object({
-    defaultProviderId: z.string().optional(),
-    defaultModelId: z.string().optional(),
-    defaultSystemPrompt: z.string().max(10000).optional(),
-    theme: z.enum(["light", "dark", "system"]).optional(),
-    sendWithEnter: z.boolean().optional(),
-    showTokenCount: z.boolean().optional(),
-});
+export const preferencesSchema = z
+    .object({
+        defaultProviderId: z.string().optional(),
+        defaultModelId: z.string().optional(),
+        defaultSystemPrompt: z.string().max(10000).optional(),
+        theme: z.enum(["light", "dark", "system"]).optional(),
+        sendWithEnter: z.boolean().optional(),
+        showTokenCount: z.boolean().optional(),
+    })
+    // The defaults are what every new conversation is opened with, so a pair
+    // that is not in the registry is a working chat broken at the first turn --
+    // stored happily, then refused by the provider. Same boundary as 2.4 and
+    // 3.5: reject at the schema so the handler gains no branch.
+    .superRefine((value, ctx) => {
+        // Both fields are optional: this is a PATCH, so a theme-only update must
+        // stay valid. Only a value the client actually sent can be refused.
+        if (value.defaultProviderId === undefined) {
+            return;
+        }
+        if (!getProvider(value.defaultProviderId)) {
+            ctx.addIssue({
+                code: "custom",
+                path: ["defaultProviderId"],
+                message: `Unknown provider: ${value.defaultProviderId}`,
+            });
+            return;
+        }
+        if (value.defaultModelId !== undefined && !getModel(value.defaultProviderId, value.defaultModelId)) {
+            ctx.addIssue({
+                code: "custom",
+                path: ["defaultModelId"],
+                message: `Unknown model for ${value.defaultProviderId}: ${value.defaultModelId}`,
+            });
+        }
+    });
 
 export type PreferencesUpdate = z.infer<typeof preferencesSchema>;
 

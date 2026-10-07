@@ -27,6 +27,11 @@ export const DEFAULT_USER_PREFERENCES = {
     showTokenCount: false,
 } as const;
 
+// The empty-state greeting. It was duplicated as a literal in two places, so an
+// empty welcome message was silently rewritten to this sentence at save time
+// instead of being treated as the display fallback it actually is.
+export const DEFAULT_WELCOME_MESSAGE = "What do you want to build, compare, or figure out today?";
+
 // ────────────────────────────────────────────────────────────────
 // Rate Limiting
 // ────────────────────────────────────────────────────────────────
