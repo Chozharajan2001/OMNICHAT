@@ -20,7 +20,6 @@ export async function createConversation(
     options?: {
         title?: string;
         projectId?: string;
-        folderId?: string;
         systemPrompt?: string;
     }
 ): Promise<Conversation> {
@@ -41,7 +40,6 @@ export async function createConversation(
             modelId,
             title: options?.title || "New Chat",
             projectId: options?.projectId,
-            folderId: options?.folderId,
             systemPrompt: options?.systemPrompt,
         },
     });
@@ -183,7 +181,6 @@ export async function updateConversation(
     data: {
         title?: string;
         projectId?: string | null;
-        folderId?: string | null;
         modelId?: string;
         providerId?: string;
         archivedAt?: Date | null;

@@ -750,13 +750,13 @@ describe("POST /api/chat - fault injection with pre-stream persistence", () => {
             expectUserPersisted(EXISTING_ID, "Same question");
         });
 
-        it("passes projectId and folderId through conversation creation (H7)", async () => {
+        it("passes projectId through creation and drops folderId, which has no entity (H7)", async () => {
             const response = await POST(request({ projectId: PROJECT_ID, folderId: FOLDER_ID }));
 
             expect(response.status).toBe(200);
             expect(mocks.createConversation).toHaveBeenCalledExactlyOnceWith(
                 USER_ID, "openai", "gpt-4o",
-                { title: "New Chat", systemPrompt: undefined, projectId: PROJECT_ID, folderId: FOLDER_ID },
+                { title: "New Chat", systemPrompt: undefined, projectId: PROJECT_ID },
             );
             expectUserPersisted(NEW_ID);
         });

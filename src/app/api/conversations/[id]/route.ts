@@ -65,12 +65,11 @@ export async function PATCH(
 
         const { id } = await params;
         const body = await req.json();
-        const { title, projectId, folderId, archived } = updateConversationSchema.parse(body);
+        const { title, projectId, archived } = updateConversationSchema.parse(body);
 
         const conversation = await updateConversation(id, session.user.id, {
             title,
             projectId,
-            folderId,
             archivedAt: archived === undefined ? undefined : archived ? new Date() : null,
         });
 

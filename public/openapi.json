@@ -535,7 +535,7 @@
       },
       "patch": {
         "summary": "Update a conversation",
-        "description": "Partial update. `archived: true` sets archivedAt, `false` clears it. Model changes are not part of this contract. `folderId` is stored but not ownership-validated: there is no Folder entity, so it is a free-form label.",
+        "description": "Partial update. `archived: true` sets archivedAt, `false` clears it. Model changes are not part of this contract. `",
         "operationId": "updateConversation",
         "tags": [
           "Conversations"
@@ -2007,7 +2007,7 @@
             "type": "string",
             "nullable": true,
             "format": "cuid",
-            "description": "Stored column with no Folder entity behind it: a free-form label, not ownership-validated."
+            "description": "Reserved: the column exists, but there is no Folder entity, no API accepts a value for it and it is always null."
           },
           "archivedAt": {
             "type": "string",
@@ -2410,11 +2410,6 @@
             "type": "string",
             "format": "cuid",
             "description": "Applied when this request creates the conversation."
-          },
-          "folderId": {
-            "type": "string",
-            "format": "cuid",
-            "description": "Applied when this request creates the conversation."
           }
         }
       },
@@ -2441,10 +2436,6 @@
             "type": "string",
             "format": "cuid"
           },
-          "folderId": {
-            "type": "string",
-            "format": "cuid"
-          },
           "systemPrompt": {
             "type": "string",
             "maxLength": 10000
@@ -2464,16 +2455,12 @@
             "format": "cuid",
             "nullable": true
           },
-          "folderId": {
-            "type": "string",
-            "format": "cuid",
-            "nullable": true
-          },
           "archived": {
             "type": "boolean",
             "description": "Maps to archivedAt: true stamps it, false clears it."
           }
-        }
+        },
+        "required": []
       },
       "SaveKeyRequest": {
         "type": "object",

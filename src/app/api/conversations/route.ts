@@ -96,14 +96,14 @@ export async function POST(req: Request) {
         // createConversationSchema requires providerId/modelId, so there is no
         // preferences fallback to apply here (it was unreachable, and cost a
         // query per create).
-        const { title, providerId, modelId, projectId, folderId } =
+        const { title, providerId, modelId, projectId } =
             createConversationSchema.parse(body);
 
         const conversation = await createConversation(
             session.user.id,
             providerId,
             modelId,
-            { title, projectId, folderId }
+            { title, projectId }
         );
 
         return NextResponse.json(conversation, { status: 201 });

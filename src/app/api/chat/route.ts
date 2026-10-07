@@ -82,7 +82,6 @@ export async function POST(req: Request) {
             temperature,
             maxTokens,
             projectId,
-            folderId,
         } = chatRequestSchema.parse(body);
 
         // M8: the turn must end with a user-authored message. The persisted
@@ -142,7 +141,6 @@ export async function POST(req: Request) {
                     // conversation to a project/folder; ownership is verified
                     // inside createConversation.
                     projectId,
-                    folderId,
                 }
             );
             conversationId = newConversation.id;
