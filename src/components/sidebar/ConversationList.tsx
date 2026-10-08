@@ -28,6 +28,11 @@ interface ConversationListProps {
     onArchive: (id: string, e: React.MouseEvent) => void;
     onDelete: (id: string, e: React.MouseEvent) => void;
     onSelect?: () => void;
+    /**
+     * What to say when the list is empty. The caller owns the wording, because
+     * only it knows whether the list is empty or merely filtered.
+     */
+    emptyMessage: string;
 }
 
 export function ConversationList({
@@ -39,6 +44,7 @@ export function ConversationList({
     onArchive,
     onDelete,
     onSelect,
+    emptyMessage,
 }: ConversationListProps) {
     if (isLoading) {
         return <div className="px-2 py-4 text-sm text-muted-foreground">Loading conversations...</div>;
@@ -47,7 +53,7 @@ export function ConversationList({
     if (conversations.length === 0) {
         return (
             <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-background/20 p-4 text-sm text-muted-foreground">
-                No conversations yet. Start one and it will appear here.
+                {emptyMessage}
             </div>
         );
     }

@@ -55,6 +55,18 @@ function SearchScopeNotice({ truncated, hasQuery }: { truncated: boolean; hasQue
     );
 }
 
+/**
+ * Only one component may describe an empty list, or the two messages contradict
+ * each other: a filtered-out list is not an account with nothing in it. The
+ * wording lives here so ConversationSidebar's own complexity stays unchanged.
+ */
+function conversationListHint(searchQuery: string): string {
+    const query = searchQuery.trim();
+    return query
+        ? `No chat in this list matches “${query}”.`
+        : "No conversations yet. Start one and it will appear here.";
+}
+
 export function ConversationSidebar() {
     const router = useRouter();
     const pathname = usePathname();
@@ -412,12 +424,8 @@ export function ConversationSidebar() {
                             onArchive={handleArchiveConversation}
                             onDelete={handleDeleteConversation}
                             onSelect={closeMobileSidebar}
+                            emptyMessage={conversationListHint(searchQuery)}
                         />
-                        {!isLoading && searchQuery.trim() && filteredConversations.length === 0 ? (
-                            <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-background/20 p-4 text-sm text-muted-foreground">
-                                No chat in this list matches &quot;{searchQuery}&quot;.
-                            </div>
-                        ) : null}
                     </div>
                 </ScrollArea>
 

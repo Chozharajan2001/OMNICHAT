@@ -32,9 +32,46 @@ function renderList() {
             onAssignProject={vi.fn()}
             onArchive={vi.fn()}
             onDelete={vi.fn()}
+            emptyMessage={NO_CONVERSATIONS_MESSAGE}
         />
     );
 }
+
+function renderEmpty(emptyMessage: string) {
+    return render(
+        <ConversationList
+            conversations={[]}
+            activeConversationId={null}
+            isLoading={false}
+            projects={[]}
+            onAssignProject={vi.fn()}
+            onArchive={vi.fn()}
+            onDelete={vi.fn()}
+            emptyMessage={emptyMessage}
+        />
+    );
+}
+
+const NO_CONVERSATIONS_MESSAGE = "No conversations yet. Start one and it will appear here.";
+
+describe("ConversationList empty state", () => {
+    // The sidebar used to render two messages for one empty list: this
+    // component's "No conversations yet" plus its own "No chat in this list
+    // matches …". The account had three chats and the filter hid them, so the
+    // panel claimed there was nothing to find at all.
+    it("shows the caller's message and never adds a contradiction", () => {
+        const { container } = renderEmpty("No chat in this list matches “zzz”.");
+
+        expect(container.textContent).toContain("No chat in this list matches “zzz”.");
+        expect(container.textContent).not.toMatch(/No conversations yet/);
+    });
+
+    it("keeps the first-run wording when nothing is filtered", () => {
+        const { container } = renderEmpty(NO_CONVERSATIONS_MESSAGE);
+
+        expect(container.textContent).toContain(NO_CONVERSATIONS_MESSAGE);
+    });
+});
 
 describe("ConversationList row controls", () => {
     it("names each icon-only action with the conversation title", () => {
