@@ -216,13 +216,16 @@ Scraped live on an idle instance with a correct token: `200`,
 endpoint - the registry creates series lazily, so a process that has served
 nothing publishes nothing.
 
-**Which metrics actually get recorded.** Only `recordChatMessage` has a production
-caller (`src/app/api/chat/route.ts`, on a successful turn).
-`recordHttpRequest`, `recordRateLimitRejection` and `recordAuthAttempt` are
-exported and unit-tested, but **no request path calls them** - so even a busy
-instance publishes chat counters only, and never any traffic, rate-limit or
-sign-in series. Wiring them means calling them from the route guard and the auth
-callbacks; until then, do not build a dashboard panel on those names.
+**Which metrics actually get recorded.** Every API handler records one
+`http_requests_total` + duration sample per response via `routeTimer`
+(`src/lib/api/observe.ts`), except `/api/health` (scrape-frequency noise) and
+`/api/metrics` itself (self-observation loop). Sign-in attempts land in
+`auth_attempts_total`/`auth_failures_total` (`authorizePassword`), 429s in
+`rate_limit_rejections_total` (hashed caller id), and successful turns in
+`chat_messages_total`/`chat_tokens_total`/`chat_duration_seconds` (already the
+case before). Scraped on an idle instance the registry is still empty-bodied:
+series are created lazily, so a process that has served nothing publishes
+nothing.
 
 Publish the real origin. Both compose stacks default `NEXTAUTH_URL` to
 `http://localhost:3000`, so on any other host set `NEXTAUTH_URL` (and
