@@ -342,6 +342,16 @@
                 "false"
               ]
             }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Title substring filter, trimmed and capped at 100 characters. First page only: nextCursor is null, and combining q with cursorId is a 400.",
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
           }
         ],
         "responses": {
@@ -375,7 +385,7 @@
             }
           },
           "400": {
-            "description": "The `cursorId` is malformed, or names no conversation the caller owns.",
+            "description": "The `cursorId` is malformed, or names no conversation the caller owns, or `cursorId` was combined with `q`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -671,7 +681,7 @@
     "/projects": {
       "get": {
         "summary": "List projects",
-        "description": "The only route family that returns the { data: ... } envelope; every other route returns a bare object.",
+        "description": "Flat shape: the 200 body is `{ projects }`, like every other collection route.",
         "operationId": "listProjects",
         "tags": [
           "Projects"
@@ -838,6 +848,99 @@
       }
     },
     "/projects/{id}": {
+      "patch": {
+        "summary": "Rename a project",
+        "description": "Provide name or color (or both). A duplicate (userId, name) pair is a 400, not a 500.",
+        "operationId": "updateProject",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "minProperties": 1,
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "color": {
+                    "type": "string",
+                    "maxLength": 20,
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated project.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "project"
+                  ],
+                  "properties": {
+                    "project": {
+                      "$ref": "#/components/schemas/Project"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Schema violation, an empty object, or the (userId, name) unique pair already exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenOrigin"
+          },
+          "404": {
+            "description": "Not found or not owned; an ownership failure is reported as 404, never 403, to avoid confirming other users' ids.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/BackendUnavailable"
+          }
+        }
+      },
       "delete": {
         "summary": "Delete a project",
         "description": "Conversations are kept; their projectId is nulled.",

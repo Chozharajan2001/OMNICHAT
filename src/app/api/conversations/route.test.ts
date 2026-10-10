@@ -89,3 +89,30 @@ describe("GET /api/conversations cursor contract (2.5)", () => {
         expect(getConversations).not.toHaveBeenCalled();
     });
 });
+
+describe("GET /api/conversations title search (D1)", () => {
+    it("forwards a trimmed q and reports no further pages", async () => {
+        const response = await GET(listRequest("?q=%20%20alpha%20%20"));
+
+        expect(response.status).toBe(200);
+        expect(getConversations).toHaveBeenCalledWith(USER_ID, 50, undefined, { archived: false, q: "alpha" });
+        expect(await response.json()).toEqual({ conversations: [], nextCursor: null });
+        expect(findConversationCursor).not.toHaveBeenCalled();
+    });
+
+    it("refuses a cursor together with q instead of paging the wrong list", async () => {
+        const response = await GET(listRequest(`?q=alpha&cursorId=${OWNED_CURSOR}`));
+
+        expect(response.status).toBe(400);
+        expect(await response.json()).toEqual({ error: "cursorId is not supported with q" });
+        expect(response.headers.get("Cache-Control")).toBe("no-store");
+        expect(getConversations).not.toHaveBeenCalled();
+    });
+
+    it("treats a blank q as no search", async () => {
+        const response = await GET(listRequest("?q=%20%20"));
+
+        expect(response.status).toBe(200);
+        expect(getConversations).toHaveBeenCalledWith(USER_ID, 50, undefined, { archived: false, q: undefined });
+    });
+});

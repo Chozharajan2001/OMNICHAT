@@ -53,8 +53,28 @@ export async function createProject(userId: string, name: string, color?: string
         });
 }
 
-export async function deleteProject(userId: string, projectId: string): Promise<void> {
+export async function updateProject(
+    userId: string,
+    projectId: string,
+    data: { name?: string; color?: string }
+): Promise<Project> {
     const project = await prisma.project.findUnique({
+        where: { id: projectId },
+    });
+
+    if (!project || project.userId !== userId) {
+        throw new Error("Project not found or access denied");
+    }
+
+    // Same race-safe pair guard as createProject: the constraint decides.
+    return await prisma.project
+        .update({ where: { id: projectId }, data })
+        .catch((error: unknown) => {
+            throw asProjectNameClash(error);
+        });
+}
+
+export async function deleteProject(userId: string, projectId: string): Promise<void> {    const project = await prisma.project.findUnique({
         where: { id: projectId },
     });
 

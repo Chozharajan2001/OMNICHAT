@@ -44,39 +44,76 @@ async function readCursor(
     return cursor ? { ok: true, cursor } : { ok: false };
 }
 
-export async function GET(req: Request) {
-    try {
+interface ListParams {
+    limit: number;
+    cursorId: string | null;
+    archived: boolean;
+    q: string;
+}
+
+function readListParams(url: string): ListParams {
+    const searchParams = new URL(url).searchParams;
+
+    // Validate and clamp limit parameter
+    const limitParam = searchParams.get("limit");
+    let limit = DEFAULT_PAGE_SIZE;
+    if (limitParam) {
+        const parsed = parseInt(limitParam, 10);
+        if (!isNaN(parsed)) {
+            // Clamp to valid range
+            limit = Math.max(MIN_PAGE_SIZE, Math.min(MAX_PAGE_SIZE, parsed));
+        }
+    }
+
+    return {
+        limit,
+        cursorId: searchParams.get("cursorId"),
+        archived: searchParams.get("archived") === "true",
+        q: (searchParams.get("q") ?? "").trim().slice(0, 100),
+    };
+}
+
+type PageResult = { ok: true; body: unknown } | { ok: false; error: string };
+
+async function loadConversationPage(userId: string, params: ListParams): Promise<PageResult> {
+    // A cursor names a position in the unfiltered list: the cursor row itself
+    // is only checked for ownership, not for matching the filter, so resuming
+    // a filtered search from it would silently skip or repeat rows. Search is
+    // first-page-only instead of wrong-page.
+    if (params.q && params.cursorId) {
+        return { ok: false, error: "cursorId is not supported with q" };
+    }
+    const parsedCursor = await readCursor(userId, params.cursorId, params.archived);
+    if (!parsedCursor.ok) {
+        return { ok: false, error: "Invalid cursor" };
+    }
+    const result = await getConversations(userId, params.limit, parsedCursor.cursor, {
+        archived: params.archived,
+        q: params.q || undefined,
+    });
+    // A nextCursor from a filtered first page would be refused by the branch
+    // above, so advertising one is a trap. Search fits in one page at the
+    // sidebar limit; deeper paging stays unfiltered.
+    if (params.q) {
+        return { ok: true, body: { conversations: result.conversations, nextCursor: null } };
+    }
+    return { ok: true, body: result };
+}
+
+export async function GET(req: Request) {    try {
         const session = await getServerSession();
         if (!session?.user?.id) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const { searchParams } = new URL(req.url);
-        
-        // Validate and clamp limit parameter
-        const limitParam = searchParams.get("limit");
-        let limit = DEFAULT_PAGE_SIZE;
-        if (limitParam) {
-            const parsed = parseInt(limitParam, 10);
-            if (!isNaN(parsed)) {
-                // Clamp to valid range
-                limit = Math.max(MIN_PAGE_SIZE, Math.min(MAX_PAGE_SIZE, parsed));
-            }
-        }
-        
-        const cursorId = searchParams.get("cursorId");
-        const archived = searchParams.get("archived") === "true";
-        const parsedCursor = await readCursor(session.user.id, cursorId, archived);
-
-        if (!parsedCursor.ok) {
+        const page = await loadConversationPage(session.user.id, readListParams(req.url));
+        if (!page.ok) {
             return NextResponse.json(
-                { error: "Invalid cursor" },
+                { error: page.error },
                 { status: 400, headers: { "Cache-Control": "no-store" } }
             );
         }
-
-        const result = await getConversations(session.user.id, limit, parsedCursor.cursor, { archived });
-        return NextResponse.json(result);
+        return NextResponse.json(page.body);
     } catch (error: unknown) {
         console.error("Failed to fetch conversations:", error);
         return NextResponse.json(

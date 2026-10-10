@@ -3,12 +3,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mockPrisma = vi.hoisted(() => ({
     project: {
         create: vi.fn(),
+        findUnique: vi.fn(),
+        update: vi.fn(),
     },
 }));
 
 vi.mock("@/lib/db/prisma", () => ({ prisma: mockPrisma }));
 
-import { createProject, DuplicateProjectNameError } from "../projects";
+import { createProject, DuplicateProjectNameError, updateProject } from "../projects";
 
 // Measured against the SQLite database with the driver adapter: creating a
 // second project with the same (userId, name) rejects with P2002 and
@@ -52,5 +54,41 @@ describe("createProject duplicate name (3.4)", () => {
         mockPrisma.project.create.mockResolvedValueOnce(created);
 
         await expect(createProject("user-1", "Alpha")).resolves.toBe(created);
+    });
+});
+
+describe("updateProject rename (D3)", () => {
+    const owned = { id: "p1", userId: "user-1", name: "Alpha", color: null };
+
+    it("updates a project the caller owns", async () => {
+        const updated = { ...owned, name: "Beta" };
+        mockPrisma.project.findUnique.mockResolvedValueOnce(owned);
+        mockPrisma.project.update.mockResolvedValueOnce(updated);
+
+        await expect(updateProject("user-1", "p1", { name: "Beta" })).resolves.toBe(updated);
+        expect(mockPrisma.project.update).toHaveBeenCalledWith({
+            where: { id: "p1" },
+            data: { name: "Beta" },
+        });
+    });
+
+    it("refuses another user's project without touching update", async () => {
+        mockPrisma.project.findUnique.mockResolvedValueOnce({ ...owned, userId: "user-2" });
+
+        await expect(updateProject("user-1", "p1", { name: "Beta" })).rejects.toThrow(
+            "Project not found or access denied"
+        );
+        expect(mockPrisma.project.update).not.toHaveBeenCalled();
+    });
+
+    it("turns a rename clash into a domain error", async () => {
+        mockPrisma.project.findUnique.mockResolvedValueOnce(owned);
+        mockPrisma.project.update.mockRejectedValueOnce(
+            prismaKnownRequestError("P2002", { modelName: "Project" })
+        );
+
+        await expect(updateProject("user-1", "p1", { name: "Alpha" })).rejects.toBeInstanceOf(
+            DuplicateProjectNameError
+        );
     });
 });

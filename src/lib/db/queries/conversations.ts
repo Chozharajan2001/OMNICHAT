@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db/prisma";
-import type { Message, Conversation } from "@prisma/client";
+import type { Message, Conversation, Prisma } from "@prisma/client";
 
 /**
  * ────────────────────────────────────────────────────────────────
@@ -46,6 +46,32 @@ export async function createConversation(
 }
 
 /**
+ * Free-text title filter, normalized once so the query and the route agree on
+ * what "blank" means. Kept out of getConversations: that function spent its
+ * branch budget on ordering and paging.
+ */
+function normalizeSearchQuery(raw?: string): string {
+    return (raw ?? "").trim().slice(0, 100);
+}
+
+function titleFilterForSearch(normalized: string): Prisma.ConversationWhereInput {
+    // Title-only: message bodies are not queried here. SQLite and PostgreSQL
+    // disagree on case folding for contains, so a search for "alpha" matches
+    // "Alpha" on one engine and not the other; the client keeps its
+    // case-insensitive in-memory filter over the returned page, which is the
+    // behavior the empty-state copy promises.
+    return normalized ? { title: { contains: normalized } } : {};
+}
+
+function listFilterFor(userId: string, archived: boolean | undefined, q: string | undefined): Prisma.ConversationWhereInput {
+    return {
+        userId,
+        archivedAt: archived ? { not: null } : null,
+        ...titleFilterForSearch(normalizeSearchQuery(q)),
+    };
+}
+
+/**
  * Get all conversations for a user, ordered by most-recently-updated.
  *
  * Optionally include a preview of the last message.
@@ -54,17 +80,14 @@ export async function getConversations(
     userId: string,
     limit = 50,
     cursor?: { id: string },
-    options?: { archived?: boolean }
+    options?: { archived?: boolean; q?: string }
 ): Promise<{
     conversations: (Conversation & {
         lastMessage?: Message | null;
     })[];
     nextCursor?: { id: string } | null;
 }> {
-    const where = {
-        userId,
-        archivedAt: options?.archived ? { not: null } : null,
-    };
+    const where = listFilterFor(userId, options?.archived, options?.q);
     // updatedAt is not unique, so ordering by it alone is not a total order:
     // SQL leaves the relative position of tied rows up to the engine, which is
     // the property a page boundary must not depend on. Measured on SQLite +

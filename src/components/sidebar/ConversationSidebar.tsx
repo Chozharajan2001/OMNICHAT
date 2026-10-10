@@ -32,11 +32,15 @@ function failureDetail(error: unknown): string | undefined {
     return error instanceof Error && error.message ? error.message : undefined;
 }
 
-// Search here is client-side over one page, so the page is asked for at the
-// largest size the API will serve (it clamps to MAX_PAGE_SIZE) and the remaining
-// scope is stated rather than implied. A server-side `?q=` is the real fix and
-// stays on the backlog.
+// The list page is asked for at the largest size the API will serve (it
+// clamps to MAX_PAGE_SIZE). A typed query is also sent as `?q=` (debounced),
+// so titles beyond the loaded page are found server-side; the in-memory filter
+// below then applies project scope and last-message matching over the page.
 const SIDEBAR_CONVERSATION_LIMIT = MAX_PAGE_SIZE;
+
+// One request per pause, not per keystroke: without the debounce every letter
+// refetches the list and the responses race.
+const SEARCH_DEBOUNCE_MS = 250;
 
 interface ConversationPage {
     conversations: Conversation[];
@@ -45,12 +49,13 @@ interface ConversationPage {
 
 // Its own component because ConversationSidebar has spent its branch budget.
 function SearchScopeNotice({ truncated, hasQuery }: { truncated: boolean; hasQuery: boolean }) {
-    if (!truncated) return null;
+    // During a search the server is the owner: it filters all titles and
+    // reports no further pages, so no scope caveat applies. The list's
+    // emptyMessage carries the no-match case.
+    if (!truncated || hasQuery) return null;
     return (
         <p className="px-1 pt-2 text-xs leading-5 text-muted-foreground">
-            {hasQuery
-                ? `Matched within the ${SIDEBAR_CONVERSATION_LIMIT} most recent chats. Older chats are not searched.`
-                : `Showing the ${SIDEBAR_CONVERSATION_LIMIT} most recent chats. Search covers these only.`}
+            Showing the {SIDEBAR_CONVERSATION_LIMIT} most recent chats.
         </p>
     );
 }
@@ -82,9 +87,22 @@ export function ConversationSidebar() {
     } = useChatStore();
     const { success, error: toastError } = useToast();
 
+    const [isDesktop, setIsDesktop] = useState(false);
+    const [searchQuery, setSearchQuery] = useState("");
+    const [debouncedQuery, setDebouncedQuery] = useState("");
+
+    useEffect(() => {
+        const timer = setTimeout(() => setDebouncedQuery(searchQuery.trim()), SEARCH_DEBOUNCE_MS);
+        return () => clearTimeout(timer);
+    }, [searchQuery]);
+
+    const conversationsUrl =
+        `/api/conversations?limit=${SIDEBAR_CONVERSATION_LIMIT}` +
+        (debouncedQuery ? `&q=${encodeURIComponent(debouncedQuery)}` : "");
+
     const { data: conversationData, loading: isLoading, refresh: fetchConversations, setData: setConversationData } =
         useJsonResource<ConversationPage>(
-            `/api/conversations?limit=${SIDEBAR_CONVERSATION_LIMIT}`,
+            conversationsUrl,
             "Failed to fetch conversations",
             `${pathname}#${listVersion}`
         );
@@ -99,8 +117,6 @@ export function ConversationSidebar() {
             ...current,
             conversations: update(current?.conversations ?? []),
         }));
-    const [isDesktop, setIsDesktop] = useState(false);
-    const [searchQuery, setSearchQuery] = useState("");
     const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
     const [newProjectName, setNewProjectName] = useState("");
     const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<{ type: "conversation" | "project"; id: string } | null>(null);

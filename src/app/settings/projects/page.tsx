@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
-import { FolderKanban, Plus, Trash2 } from "lucide-react";
+import { FolderKanban, Pencil, Plus, Trash2 } from "lucide-react";
 import { useToast } from "@/stores/toast-store";
 import { useJsonResource } from "@/hooks/useJsonResource";
 
@@ -20,6 +20,105 @@ interface ProjectItem {
 
 function projectDeleteCopy(project: ProjectItem | null): string {
     return `Delete ${project?.name ?? "this project"}? Its conversations stay in the workspace and become unassigned.`;
+}
+
+// Owns everything about renaming from a row: the button, the open state,
+// and the dialog. ProjectsSettingsPage only passes the project and a refresh.
+function RenameControl({ project, onRenamed }: {
+    project: ProjectItem;
+    onRenamed: () => void;
+}) {
+    const [open, setOpen] = useState(false);
+
+    return (
+        <>
+            <Button
+                variant="outline"
+                size="sm"
+                className="rounded-full"
+                aria-label={`Rename ${project.name}`}
+                onClick={() => setOpen(true)}
+            >
+                <Pencil className="h-3.5 w-3.5" />
+                Rename
+            </Button>
+            {open ? (
+                <RenameProjectDialog
+                    key={project.id}
+                    project={project}
+                    onClose={() => setOpen(false)}
+                    onRenamed={() => {
+                        setOpen(false);
+                        onRenamed();
+                    }}
+                />
+            ) : null}
+        </>
+    );
+}
+// The dialog owns its draft, its PATCH, and the duplicate-name recovery: a
+// clash answers 400 with the reason, and surfacing response.error (not a bare
+// "Rename failed") is what makes it recoverable.
+function RenameProjectDialog({ project, onClose, onRenamed }: {
+    project: ProjectItem;
+    onClose: () => void;
+    onRenamed: () => void;
+}) {
+    const { success, error: toastError } = useToast();
+    const [renameName, setRenameName] = useState(project.name);
+
+    const renameProject = async () => {
+        const name = renameName.trim();
+        if (!name) return;
+
+        try {
+            const response = await fetch(`/api/projects/${project.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name }),
+            });
+
+            const payload = await response.json();
+            if (!response.ok) {
+                throw new Error(payload.error || "Failed to rename project");
+            }
+
+            onRenamed();
+            success("Project renamed");
+        } catch (error) {
+            console.error("Failed to rename project:", error);
+            toastError("Rename failed", error instanceof Error ? error.message : undefined);
+        }
+    };
+
+    return (
+        <Modal open title={`Rename ${project.name}`} onClose={onClose} showCloseButton>
+            <div className="space-y-4">
+                <Input
+                    value={renameName}
+                    onChange={(event) => setRenameName(event.target.value)}
+                    placeholder="Project name"
+                    className="h-11 rounded-xl"
+                    autoFocus
+                    onKeyDown={(event) => {
+                        if (event.key === "Enter") void renameProject();
+                    }}
+                />
+                <div className="flex gap-2">
+                    <Button variant="ghost" className="flex-1 rounded-xl" onClick={onClose}>
+                        Cancel
+                    </Button>
+                    <Button
+                        className="flex-1 rounded-xl"
+                        onClick={renameProject}
+                        disabled={!renameName.trim() || renameName.trim() === project.name}
+                    >
+                        Save
+                    </Button>
+                </div>
+            </div>
+        </Modal>
+    );
 }
 
 export default function ProjectsSettingsPage() {
@@ -136,6 +235,7 @@ export default function ProjectsSettingsPage() {
                                         <FolderKanban className="h-3.5 w-3.5" />
                                         Active in sidebar
                                     </Button>
+                                    <RenameControl project={project} onRenamed={() => void fetchProjects()} />
                                     <Button
                                         variant="destructive"
                                         size="sm"

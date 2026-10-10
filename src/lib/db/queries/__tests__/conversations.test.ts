@@ -458,6 +458,24 @@ describe("getConversations pagination contract (2.5)", () => {
 
         expect(page.nextCursor).toBeNull();
     });
+
+    it("filters titles when q is supplied and ignores a blank q", async () => {
+        mockPrisma.conversation.findMany.mockResolvedValueOnce([]);
+
+        await getConversations("user-123", 2, undefined, { q: "  alpha  " });
+
+        const args = mockPrisma.conversation.findMany.mock.calls[0][0];
+        expect(args.where).toMatchObject({ userId: "user-123", title: { contains: "alpha" } });
+    });
+
+    it("leaves the title predicate out when q is blank", async () => {
+        mockPrisma.conversation.findMany.mockResolvedValueOnce([]);
+
+        await getConversations("user-123", 2, undefined, { q: "   " });
+
+        const args = mockPrisma.conversation.findMany.mock.calls[0][0];
+        expect(args.where).not.toHaveProperty("title");
+    });
 });
 
 describe("findConversationCursor (2.5)", () => {
