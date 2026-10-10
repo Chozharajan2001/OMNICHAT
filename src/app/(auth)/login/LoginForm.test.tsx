@@ -43,4 +43,10 @@ describe("LoginForm OAuth section (Phase 4.1)", () => {
         expect(screen.getByLabelText(/password/i)).toBeDefined();
         expect(screen.getByRole("button", { name: /sign in/i })).toBeDefined();
     });
+
+    it("lands the page in a main landmark", () => {
+        const { container } = render(<LoginForm oauth={none} />);
+
+        expect(container.querySelector("main")).not.toBeNull();
+    });
 });

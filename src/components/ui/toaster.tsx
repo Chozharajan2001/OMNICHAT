@@ -9,7 +9,10 @@ export function Toaster() {
     const dismissToast = useToastStore((state) => state.dismissToast);
 
     return (
-        <div className="pointer-events-none fixed bottom-4 right-4 z-[100] flex w-full max-w-sm flex-col gap-3 px-4 sm:bottom-6 sm:right-6">
+        // Positioned by both edges below sm: w-full against right-4 alone
+        // starts the panel off-screen left on narrow phones. sm+ keeps the
+        // exact previous geometry (right-anchored, capped, inner padding).
+        <div className="pointer-events-none fixed bottom-4 left-4 right-4 z-[100] flex max-w-sm flex-col gap-3 px-4 sm:bottom-6 sm:left-auto sm:right-6 sm:w-full">
             {toasts.map((toast) => (
                 <div
                     key={toast.id}

@@ -345,6 +345,10 @@ export function ConversationSidebar() {
             ) : null}
 
             <aside
+                // Off-canvas is not enough: a translated sidebar stays in the
+                // tab order and the accessibility tree, so keyboard users walk
+                // through invisible controls. inert removes both at once.
+                inert={!isSidebarOpen}
                 className={cn(
                     "glass-panel fixed inset-y-0 left-0 z-40 flex h-dvh flex-col border-r border-[var(--sidebar-border)] bg-[var(--sidebar)] text-[var(--sidebar-foreground)] transition-all duration-300",
                     "w-[min(88vw,22rem)]",

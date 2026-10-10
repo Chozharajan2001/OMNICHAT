@@ -108,7 +108,7 @@ export default function LoginForm({ oauth }: { oauth: OAuthAvailability }) {
     };
 
     return (
-        <div className="app-shell flex min-h-dvh items-center justify-center px-4 py-10">
+        <main className="app-shell flex min-h-dvh items-center justify-center px-4 py-10">
             <div className="grid w-full max-w-6xl gap-8 lg:grid-cols-[minmax(0,1.1fr)_420px]">
                 <section className="glass-panel hidden rounded-[2rem] border border-border/70 p-10 lg:flex lg:flex-col lg:justify-between">
                     <div>
@@ -238,6 +238,6 @@ export default function LoginForm({ oauth }: { oauth: OAuthAvailability }) {
                     </CardFooter>
                 </Card>
             </div>
-        </div>
+        </main>
     );
 }
