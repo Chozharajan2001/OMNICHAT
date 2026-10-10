@@ -4,6 +4,7 @@ import { createProject, DuplicateProjectNameError, getProjects } from "@/lib/db/
 import { z, ZodError } from "zod";
 import { createRateLimiter, getRateLimitHeaders, isRateLimitBackendUnavailableError } from "@/lib/rate-limit";
 import { guardMutationRequest } from "@/lib/api/csrf";
+import { routeTimer, recordRejection } from "@/lib/api/observe";
 import { WRITE_RATE_LIMIT, WRITE_RATE_WINDOW_MS } from "@/lib/constants";
 
 const createProjectSchema = z.object({
@@ -45,9 +46,11 @@ function projectWriteErrorResponse(error: unknown): NextResponse | null {
 }
 
 export async function GET() {
+    const done = routeTimer("GET", "/api/projects");
     try {
         const session = await getServerSession();
         if (!session?.user?.id) {
+            done(401);
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
@@ -55,9 +58,11 @@ export async function GET() {
         // Flat shape: both consumers (the sidebar Projects section and
         // settings/projects) read `{ projects }`, as every other collection route
         // does. The old nested envelope made both lists render empty.
+        done(200);
         return NextResponse.json({ projects });
     } catch (error: unknown) {
         console.error("Failed to fetch projects:", error);
+        done(500);
         return NextResponse.json(
             { error: "Failed to fetch projects" },
             { status: 500 }
@@ -66,18 +71,25 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+    const done = routeTimer("POST", "/api/projects");
     const rejection = guardMutationRequest(request, true);
-    if (rejection) return rejection;
+    if (rejection) {
+        done(rejection.status);
+        return rejection;
+    }
 
     try {
         const session = await getServerSession();
         if (!session?.user?.id) {
+            done(401);
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
         // Check rate limit
         const rateLimit = await writeRateLimiter.check(session.user.id);
         if (rateLimit.limited) {
+            recordRejection("/api/projects", session.user.id);
+            done(429);
             return NextResponse.json(
                 { error: "Rate limit exceeded" },
                 {
@@ -93,7 +105,8 @@ export async function POST(request: Request) {
         const body = await request.json();
         const { name, color } = createProjectSchema.parse(body);
         const project = await createProject(session.user.id, name, color);
-        
+
+        done(201);
         return NextResponse.json(
             { project },
             {
@@ -103,12 +116,17 @@ export async function POST(request: Request) {
         );
     } catch (error: unknown) {
         if (isRateLimitBackendUnavailableError(error)) {
+            done(503);
             return NextResponse.json({ error: "Service unavailable" }, { status: 503 });
         }
         console.error("Failed to create project:", error);
         const handled = projectWriteErrorResponse(error);
-        if (handled) return handled;
+        if (handled) {
+            done(handled.status);
+            return handled;
+        }
 
+        done(500);
         return NextResponse.json(
             { error: "Failed to create project" },
             { status: 500 }

@@ -11,6 +11,7 @@ import { getEmailConfiguration } from "@/lib/email/config";
 import { canAutoCreateAccount, isEmailVerificationRequired, normalizedEmailSchema, validatePasswordComplexity } from "./email-policy";
 import { hasVerifiedAccess } from "./verified-access";
 import { findEmailAccount, normalizeAccountEmail } from "./email-account";
+import { recordAuthAttempt } from "@/lib/metrics";
 
 const emailLoginLimiter = createRateLimiter({
     windowMs: 15 * 60_000,
@@ -39,18 +40,27 @@ export async function authorizePassword(credentials: Partial<Record<"email" | "p
     try {
         const parsed = normalizedEmailSchema.safeParse(credentials.email);
         const password = credentials.password;
-        if (!parsed.success || typeof password !== "string" || !password || password.length > 1024) return null;
+        if (!parsed.success || typeof password !== "string" || !password || password.length > 1024) {
+            recordAuthAttempt(false, "credentials");
+            return null;
+        }
         if (isEmailVerificationRequired()) getEmailConfiguration();
         const results = await Promise.all([
             authRateLimiter.check(getClientIp(request)), emailLoginLimiter.check(parsed.data),
         ]);
-        if (results.some((result) => result.limited)) return null;
-        return await authenticatePassword(parsed.data, password);
+        if (results.some((result) => result.limited)) {
+            recordAuthAttempt(false, "credentials");
+            return null;
+        }
+        const user = await authenticatePassword(parsed.data, password);
+        recordAuthAttempt(user !== null, "credentials");
+        return user;
     } catch (error) {
         // Including async rate-limiter outages: fail closed, never log credentials.
         // Logged because Auth.js only shows the user "CredentialsSignin", which
         // otherwise hides a misconfigured RATE_LIMIT_BACKEND or a missing table.
         console.error("Sign-in refused by a fail-closed dependency:", error);
+        recordAuthAttempt(false, "credentials");
         return null;
     }
 }

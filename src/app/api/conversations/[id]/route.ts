@@ -18,6 +18,7 @@ import {
 } from "@/lib/db/queries/conversations";
 import { updateConversationSchema } from "@/lib/validators/schemas";
 import { z, ZodError } from "zod";
+import { routeTimer } from "@/lib/api/observe";
 
 const messagePageQuerySchema = z.object({
     limit: z.coerce.number().int().min(1).max(100).optional(),
@@ -109,9 +110,11 @@ export async function GET(
     req: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
+    const done = routeTimer("GET", "/api/conversations/[id]");
     try {
         const session = await getServerSession();
         if (!session?.user?.id) {
+            done(401);
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
@@ -125,12 +128,18 @@ export async function GET(
             // Awaited, not returned: a rejection from the window must land in
             // the catch below for the 400/404 mapping instead of escaping as
             // an unhandled rejection (a 500 with no shape).
-            return await loadMessageWindow(session.user.id, id, query);
+            const windowed = await loadMessageWindow(session.user.id, id, query);
+            done(windowed.status);
+            return windowed;
         }
 
-        return await loadFullTranscript(session.user.id, id);
+        const full = await loadFullTranscript(session.user.id, id);
+        done(full.status);
+        return full;
     } catch (error: unknown) {
-        return failureResponse(error);
+        const res = failureResponse(error);
+        done(res.status);
+        return res;
     }
 }
 
@@ -138,12 +147,17 @@ export async function PATCH(
     req: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
+    const done = routeTimer("PATCH", "/api/conversations/[id]");
     const rejection = guardMutationRequest(req, true);
-    if (rejection) return rejection;
+    if (rejection) {
+        done(rejection.status);
+        return rejection;
+    }
 
     try {
         const session = await getServerSession();
         if (!session?.user?.id) {
+            done(401);
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
@@ -157,11 +171,13 @@ export async function PATCH(
             archivedAt: archived === undefined ? undefined : archived ? new Date() : null,
         });
 
+        done(200);
         return NextResponse.json(conversation);
     } catch (error: unknown) {
         console.error("Failed to update conversation:", error);
 
         if (error instanceof ZodError) {
+            done(400);
             return NextResponse.json(
                 { error: "Invalid request", details: error.issues },
                 { status: 400 }
@@ -169,6 +185,7 @@ export async function PATCH(
         }
 
         if (error instanceof Error && error.message === "Conversation not found or access denied") {
+            done(404);
             return NextResponse.json(
                 { error: "Conversation not found" },
                 { status: 404 }
@@ -176,12 +193,14 @@ export async function PATCH(
         }
 
         if (error instanceof Error && error.message === "Project not found or access denied") {
+            done(404);
             return NextResponse.json(
                 { error: error.message },
                 { status: 404 }
             );
         }
 
+        done(500);
         return NextResponse.json(
             { error: "Failed to update conversation" },
             { status: 500 }
@@ -193,29 +212,37 @@ export async function DELETE(
     req: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
+    const done = routeTimer("DELETE", "/api/conversations/[id]");
     const rejection = guardMutationRequest(req);
-    if (rejection) return rejection;
+    if (rejection) {
+        done(rejection.status);
+        return rejection;
+    }
 
     try {
         const session = await getServerSession();
         if (!session?.user?.id) {
+            done(401);
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
         const { id } = await params;
         await deleteConversation(id, session.user.id);
 
+        done(200);
         return NextResponse.json({ success: true });
     } catch (error: unknown) {
         console.error("Failed to delete conversation:", error);
 
         if (error instanceof Error && error.message === "Conversation not found or access denied") {
+            done(404);
             return NextResponse.json(
                 { error: "Conversation not found" },
                 { status: 404 }
             );
         }
 
+        done(500);
         return NextResponse.json(
             { error: "Failed to delete conversation" },
             { status: 500 }

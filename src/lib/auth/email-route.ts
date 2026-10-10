@@ -1,12 +1,18 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { assertSameOrigin, CsrfError } from "@/lib/api/csrf";
+import { routeTimer, recordRejection } from "@/lib/api/observe";
 import { createRateLimiter, getClientIp, type RateLimitResult } from "@/lib/rate-limit";
 import { getEmailConfiguration } from "@/lib/email/config";
 import { isEmailVerificationRequired, normalizedEmailSchema, registrationSchema, resendSchema, verificationSchema } from "./email-policy";
 import { consumeEmailVerification, requestEmailVerification } from "./email-verification";
 
 type Action = "register" | "resend" | "verify";
+const actionRoute: Record<Action, string> = {
+    register: "/api/auth/register",
+    resend: "/api/auth/resend-verification",
+    verify: "/api/auth/verify-email",
+};
 const confirmSchema = verificationSchema.extend({ email: normalizedEmailSchema });
 const mailIpLimiter = createRateLimiter({ windowMs: 60 * 60_000, maxRequests: 10, keyGenerator: (ip) => `email:send:ip:${ip}` });
 const mailEmailLimiter = createRateLimiter({ windowMs: 60 * 60_000, maxRequests: 3, keyGenerator: (hash) => `email:send:address:${hash}` });
@@ -22,8 +28,9 @@ function json(body: object, status: number, headers: Record<string, string> = {}
     return Response.json(body, { status, headers: { "Cache-Control": "no-store", ...headers } });
 }
 
-function limited(result: RateLimitResult): Response | null {
+function limited(result: RateLimitResult, endpoint: string, id: string): Response | null {
     if (!result.limited) return null;
+    recordRejection(endpoint, id);
     return json({ error: "Too many requests" }, 429, { "Retry-After": String(Math.max(1, result.retryAfter)) });
 }
 
@@ -72,26 +79,42 @@ async function complete(body: ParsedBody): Promise<Response> {
 
 async function execute(action: Action, request: Request): Promise<Response> {
     const verifying = action === "verify";
-    const ipLimit = await (verifying ? verifyIpLimiter : mailIpLimiter).check(getClientIp(request));
-    const blockedIp = limited(ipLimit);
+    const endpoint = actionRoute[action];
+    const ip = getClientIp(request);
+    const ipLimit = await (verifying ? verifyIpLimiter : mailIpLimiter).check(ip);
+    const blockedIp = limited(ipLimit, endpoint, ip);
     if (blockedIp) return blockedIp;
     const schema = { register: registrationSchema, resend: resendSchema, verify: confirmSchema }[action];
     const body: ParsedBody = schema.parse(await readJson(request));
     const addressHash = createHash("sha256").update(body.email).digest("hex");
     const emailLimit = await (verifying ? verifyEmailLimiter : mailEmailLimiter).check(addressHash);
-    return limited(emailLimit) ?? complete(body);
+    return limited(emailLimit, endpoint, addressHash) ?? complete(body);
 }
 
 export function createEmailRoute(action: Action) {
+    const route = actionRoute[action];
     return async function POST(request: Request): Promise<Response> {
+        const done = routeTimer("POST", route);
         try {
             prepare(request); // Must precede parsing, limits, authentication and writes.
-            return await execute(action, request);
+            const response = await execute(action, request);
+            done(response.status);
+            return response;
         } catch (error) {
-            if (error instanceof CsrfError) return json({ error: "Forbidden" }, 403);
-            if (error instanceof InputError) return json({ error: error.message }, error.status);
-            if (error instanceof z.ZodError) return json({ error: "Invalid request" }, 400);
+            if (error instanceof CsrfError) {
+                done(403);
+                return json({ error: "Forbidden" }, 403);
+            }
+            if (error instanceof InputError) {
+                done(error.status);
+                return json({ error: error.message }, error.status);
+            }
+            if (error instanceof z.ZodError) {
+                done(400);
+                return json({ error: "Invalid request" }, 400);
+            }
             // SMTP, DB, distributed limiter and configuration failures share one response.
+            done(503);
             return json({ error: "Service unavailable" }, 503);
         }
     };

@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "@/lib/auth/session";
+import { routeTimer } from "@/lib/api/observe";
 import { SUPPORTED_PROVIDERS } from "@/lib/mastra/providers";
 import { getUserKeys } from "@/lib/db/queries/api-keys";
 
 export async function GET() {
+    const done = routeTimer("GET", "/api/providers");
     try {
         const session = await getServerSession();
         if (!session?.user?.id) {
+            done(401);
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
@@ -30,9 +33,11 @@ export async function GET() {
             keyHint: keysByProvider[p.id]?.keyHint || null,
         }));
 
+        done(200);
         return NextResponse.json({ providers });
     } catch (error) {
         console.error("Providers list error:", error);
+        done(500);
         return NextResponse.json(
             { error: "Failed to fetch providers" },
             { status: 500 }

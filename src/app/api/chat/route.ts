@@ -25,6 +25,7 @@ import {
 } from "@/lib/ai/context-manager";
 import { chatRequestSchema } from "@/lib/validators/schemas";
 import { chatRateLimiter, getRateLimitHeaders, isRateLimitBackendUnavailableError } from "@/lib/rate-limit";
+import { routeTimer, recordRejection } from "@/lib/api/observe";
 import { prisma } from "@/lib/db/prisma";
 import { recordChatMessage } from "@/lib/metrics";
 
@@ -53,13 +54,18 @@ async function titleFirstTurn(
 }
 
 export async function POST(req: Request) {
+    const done = routeTimer("POST", "/api/chat");
     const rejection = guardMutationRequest(req, true);
-    if (rejection) return rejection;
+    if (rejection) {
+        done(rejection.status);
+        return rejection;
+    }
 
     try {
         // 1. Authenticate user
         const session = await getServerSession();
         if (!session?.user?.id) {
+            done(401);
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
         const userId = session.user.id;
@@ -67,6 +73,8 @@ export async function POST(req: Request) {
         // 2. Check rate limit
         const rateLimitResult = await chatRateLimiter.check(userId);
         if (rateLimitResult.limited) {
+            recordRejection("/api/chat", userId);
+            done(429);
             return NextResponse.json(
                 {
                     error: "Rate limit exceeded",
@@ -88,6 +96,7 @@ export async function POST(req: Request) {
         try {
             body = await req.json();
         } catch {
+            done(400);
             return NextResponse.json(
                 { error: "Invalid JSON in request body" },
                 { status: 400 }
@@ -111,6 +120,7 @@ export async function POST(req: Request) {
         // client input.
         const userMessage = messages[messages.length - 1];
         if (!userMessage || userMessage.role !== "user") {
+            done(400);
             return NextResponse.json(
                 { error: "Last message must be from the user" },
                 { status: 400 }
@@ -120,6 +130,7 @@ export async function POST(req: Request) {
         // 3. Get user's API key (decrypted)
         const apiKey = await getDecryptedKey(userId, providerId);
         if (!apiKey) {
+            done(400);
             return NextResponse.json(
                 { error: "No API key configured for this provider. Please add your API key in Settings." },
                 { status: 400 }
@@ -138,6 +149,7 @@ export async function POST(req: Request) {
                 // conversation: the user keeps the transcript on screen while
                 // the server writes the turn somewhere else, and the old chat
                 // is silently orphaned. Not found / not yours is a 404.
+                done(404);
                 return NextResponse.json(
                     { error: "Conversation not found" },
                     { status: 404 }
@@ -315,6 +327,7 @@ export async function POST(req: Request) {
             60
         );
 
+        done(200);
         return responseWithFailureNotice(
             result.toTextStreamResponse({
                 headers: {
@@ -326,11 +339,13 @@ export async function POST(req: Request) {
         );
     } catch (error: unknown) {
         if (isRateLimitBackendUnavailableError(error)) {
+            done(503);
             return NextResponse.json({ error: "Service unavailable" }, { status: 503 });
         }
         console.error("Chat API error:", error);
 
         if (error instanceof ZodError) {
+            done(400);
             return NextResponse.json(
                 { error: "Invalid request", details: error.issues },
                 { status: 400 }
@@ -338,6 +353,7 @@ export async function POST(req: Request) {
         }
 
         // Return generic error message to avoid leaking internal details
+        done(500);
         return NextResponse.json(
             { error: "An error occurred while processing your request" },
             { status: 500 }

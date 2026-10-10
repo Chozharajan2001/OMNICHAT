@@ -8,6 +8,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "@/lib/auth/session";
 import { guardMutationRequest } from "@/lib/api/csrf";
+import { routeTimer } from "@/lib/api/observe";
 import {
     getConversations,
     createConversation,
@@ -100,22 +101,28 @@ async function loadConversationPage(userId: string, params: ListParams): Promise
     return { ok: true, body: result };
 }
 
-export async function GET(req: Request) {    try {
+export async function GET(req: Request) {
+    const done = routeTimer("GET", "/api/conversations");
+    try {
         const session = await getServerSession();
         if (!session?.user?.id) {
+            done(401);
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
         const page = await loadConversationPage(session.user.id, readListParams(req.url));
         if (!page.ok) {
+            done(400);
             return NextResponse.json(
                 { error: page.error },
                 { status: 400, headers: { "Cache-Control": "no-store" } }
             );
         }
+        done(200);
         return NextResponse.json(page.body);
     } catch (error: unknown) {
         console.error("Failed to fetch conversations:", error);
+        done(500);
         return NextResponse.json(
             { error: "Failed to fetch conversations" },
             { status: 500 }
@@ -124,12 +131,17 @@ export async function GET(req: Request) {    try {
 }
 
 export async function POST(req: Request) {
+    const done = routeTimer("POST", "/api/conversations");
     const rejection = guardMutationRequest(req, true);
-    if (rejection) return rejection;
+    if (rejection) {
+        done(rejection.status);
+        return rejection;
+    }
 
     try {
         const session = await getServerSession();
         if (!session?.user?.id) {
+            done(401);
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
@@ -147,11 +159,13 @@ export async function POST(req: Request) {
             { title, projectId }
         );
 
+        done(201);
         return NextResponse.json(conversation, { status: 201 });
     } catch (error: unknown) {
         console.error("Failed to create conversation:", error);
 
         if (error instanceof ZodError) {
+            done(400);
             return NextResponse.json(
                 { error: "Invalid request", details: error.issues },
                 { status: 400 }
@@ -159,12 +173,14 @@ export async function POST(req: Request) {
         }
 
         if (error instanceof Error && error.message === "Project not found or access denied") {
+            done(404);
             return NextResponse.json(
                 { error: error.message },
                 { status: 404 }
             );
         }
 
+        done(500);
         return NextResponse.json(
             { error: "Failed to create conversation" },
             { status: 500 }
@@ -173,19 +189,26 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+    const done = routeTimer("DELETE", "/api/conversations");
     const rejection = guardMutationRequest(req);
-    if (rejection) return rejection;
+    if (rejection) {
+        done(rejection.status);
+        return rejection;
+    }
 
     try {
         const session = await getServerSession();
         if (!session?.user?.id) {
+            done(401);
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
         const deletedCount = await deleteAllConversations(session.user.id);
+        done(200);
         return NextResponse.json({ success: true, deletedCount });
     } catch (error: unknown) {
         console.error("Failed to delete all conversations:", error);
+        done(500);
         return NextResponse.json(
             { error: "Failed to delete all conversations" },
             { status: 500 }
