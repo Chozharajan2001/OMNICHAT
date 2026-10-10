@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Archive, FolderOpen, MessageSquare, Trash2 } from "lucide-react";
+import { Archive, Download, FolderOpen, MessageSquare, Trash2 } from "lucide-react";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -27,6 +27,7 @@ interface ConversationListProps {
     onAssignProject: (conversationId: string, projectId: string | null) => void;
     onArchive: (id: string, e: React.MouseEvent) => void;
     onDelete: (id: string, e: React.MouseEvent) => void;
+    onExport: (id: string, title: string) => void;
     onSelect?: () => void;
     /**
      * What to say when the list is empty. The caller owns the wording, because
@@ -43,6 +44,7 @@ export function ConversationList({
     onAssignProject,
     onArchive,
     onDelete,
+    onExport,
     onSelect,
     emptyMessage,
 }: ConversationListProps) {
@@ -119,6 +121,13 @@ export function ConversationList({
                                     </DropdownMenuItem>
                                 ))
                             )}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                                onClick={() => onExport(conversation.id, conversation.title)}
+                            >
+                                <Download className="h-3 w-3" />
+                                Export as JSON
+                            </DropdownMenuItem>
                         </DropdownMenuContent>
                     </DropdownMenu>
                     <Button

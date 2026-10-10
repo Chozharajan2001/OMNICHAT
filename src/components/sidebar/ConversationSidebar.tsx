@@ -22,6 +22,7 @@ import {
     Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { downloadConversationExport } from "@/lib/conversation-export";
 import { usePersonalizationStore } from "@/stores/personalization-store";
 import { useToast } from "@/stores/toast-store";
 import { MAX_PAGE_SIZE } from "@/lib/constants";
@@ -310,6 +311,13 @@ export function ConversationSidebar() {
         }
     };
 
+    const handleExportConversation = (id: string, title: string) => {
+        void downloadConversationExport(id, title).catch((error: unknown) => {
+            console.error("Failed to export conversation:", error);
+            toastError("Export failed", error instanceof Error ? error.message : undefined);
+        });
+    };
+
     const closeMobileSidebar = () => {
         if (!isDesktop) {
             setSidebarOpen(false);
@@ -443,6 +451,7 @@ export function ConversationSidebar() {
                             onAssignProject={handleAssignProject}
                             onArchive={handleArchiveConversation}
                             onDelete={handleDeleteConversation}
+                            onExport={handleExportConversation}
                             onSelect={closeMobileSidebar}
                             emptyMessage={conversationListHint(searchQuery)}
                         />

@@ -6,6 +6,7 @@ import type { Conversation } from "@/stores/chat-store";
 
 vi.mock("lucide-react", () => ({
     Archive: () => <span data-testid="i-archive" />,
+    Download: () => <span data-testid="i-download" />,
     FolderOpen: () => <span data-testid="i-folder" />,
     MessageSquare: () => <span data-testid="i-message" />,
     Trash2: () => <span data-testid="i-trash" />,
@@ -32,6 +33,7 @@ function renderList() {
             onAssignProject={vi.fn()}
             onArchive={vi.fn()}
             onDelete={vi.fn()}
+            onExport={vi.fn()}
             emptyMessage={NO_CONVERSATIONS_MESSAGE}
         />
     );
@@ -47,6 +49,7 @@ function renderEmpty(emptyMessage: string) {
             onAssignProject={vi.fn()}
             onArchive={vi.fn()}
             onDelete={vi.fn()}
+            onExport={vi.fn()}
             emptyMessage={emptyMessage}
         />
     );

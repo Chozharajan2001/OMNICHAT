@@ -512,6 +512,80 @@
         }
       }
     },
+    "/conversations/{id}/export": {
+      "get": {
+        "summary": "Export one conversation as a file",
+        "description": "Portable JSON (id, title, provider, model, exportedAt, turns in order). Internal ids, ownership columns and prompts stay behind. Answered as an attachment with no-store.",
+        "operationId": "exportConversation",
+        "tags": [
+          "Conversations"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConversationId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The thread as a named JSON download.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "title",
+                    "messages",
+                    "exportedAt"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "cuid"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "providerId": {
+                      "type": "string"
+                    },
+                    "modelId": {
+                      "type": "string"
+                    },
+                    "exportedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "messages": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MessageRecord"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Unknown id, or owned by another user (same response, no enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
     "/conversations/{id}": {
       "get": {
         "summary": "Get one conversation with its transcript",

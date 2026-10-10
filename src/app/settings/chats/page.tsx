@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { Archive, EyeOff, MessageSquareDashed, RotateCcw, Trash2 } from "lucide-react";
+import { Archive, Download, EyeOff, MessageSquareDashed, RotateCcw, Trash2 } from "lucide-react";
 import { useChatStore, type Conversation } from "@/stores/chat-store";
+import { downloadConversationExport } from "@/lib/conversation-export";
 import { usePersonalizationStore } from "@/stores/personalization-store";
 import { useToast } from "@/stores/toast-store";
 
@@ -129,6 +130,16 @@ export default function ChatsSettingsPage() {
         handleDeleteArchivedConversation(deleteTarget.id);
     };
 
+    const handleExportConversation = (id: string, title: string) => {
+        setFeedback(null);
+        void downloadConversationExport(id, title).catch((error: unknown) => {
+            const errorMessage =
+                error instanceof Error ? error.message : "Failed to export conversation";
+            setFeedback(errorMessage);
+            toastError("Export failed", errorMessage);
+        });
+    };
+
     return (
         <div className="space-y-8">
             <div>
@@ -246,6 +257,16 @@ export default function ChatsSettingsPage() {
                                             Restore
                                         </Button>
                                         <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => handleExportConversation(conversation.id, conversation.title)}
+                                            className="rounded-full"
+                                            aria-label={`Export ${conversation.title} as JSON`}
+                                        >
+                                            <Download className="h-3.5 w-3.5" />
+                                            Export
+                                        </Button>
+                                        <Button
                                             variant="destructive"
                                             size="sm"
                                             onClick={() => setDeleteTarget(conversation)}
@@ -276,7 +297,7 @@ export default function ChatsSettingsPage() {
                 </div>
 
                 <div className="grid gap-3 md:grid-cols-2">
-                    {["Voice mode", "Conversation export", "Message-level pagination"].map((item) => (
+                    {["Voice mode", "Model comparison", "Team workspaces"].map((item) => (
                         <div
                             key={item}
                             className="rounded-2xl border border-border/70 bg-background/20 px-4 py-3 text-sm text-muted-foreground"
