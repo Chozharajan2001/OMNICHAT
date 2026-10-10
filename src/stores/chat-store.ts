@@ -31,6 +31,17 @@ export interface Message {
     createdAt: string;
 }
 
+/**
+ * The transcript window currently on screen. Ephemeral like listVersion (never
+ * persisted): it names a position in one conversation, and a reload re-fetches
+ * the latest window anyway. A fresh canvas has none, so a stale cursor can
+ * never page a previous thread into a new one.
+ */
+export interface MessagePageInfo {
+    hasMorePrev: boolean;
+    prevCursor: string | null;
+}
+
 interface ChatState {
     // Current model selection
     providerId: string;
@@ -41,6 +52,7 @@ interface ChatState {
     conversationId: string | null;
     conversationTitle: string;
     messages: Message[];
+    page: MessagePageInfo | null;
 
     // UI state
     isSidebarOpen: boolean;
@@ -60,6 +72,7 @@ interface ChatState {
     setConversationId: (id: string | null) => void;
     setConversationTitle: (title: string) => void;
     setMessages: (messages: Message[]) => void;
+    setPage: (page: MessagePageInfo | null) => void;
     addMessage: (message: Message) => void;
     removeMessage: (id: string) => void;
     updateMessage: (id: string, content: string) => void;
@@ -80,6 +93,7 @@ export const useChatStore = create<ChatState>()(
             conversationId: null,
             conversationTitle: "New Chat",
             messages: [],
+            page: null,
             isSidebarOpen: true,
             listVersion: 0,
 
@@ -93,6 +107,7 @@ export const useChatStore = create<ChatState>()(
             setConversationId: (id) => set({ conversationId: id }),
             setConversationTitle: (title) => set({ conversationTitle: title }),
             setMessages: (messages) => set({ messages }),
+            setPage: (page) => set({ page }),
             addMessage: (message) =>
                 set((state) => ({ messages: [...state.messages, message] })),
             removeMessage: (id) =>
@@ -109,7 +124,7 @@ export const useChatStore = create<ChatState>()(
                         message.id === id ? { ...message, content } : message
                     ),
                 })),
-            clearMessages: () => set({ messages: [], conversationId: null, conversationTitle: "New Chat" }),
+            clearMessages: () => set({ messages: [], conversationId: null, conversationTitle: "New Chat", page: null }),
 
             // UI actions
             toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),

@@ -83,3 +83,6 @@ export const MAX_PAGE_SIZE = 100;
 
 /** Minimum page size */
 export const MIN_PAGE_SIZE = 1;
+
+/** Default message page: a thread opens on its latest turns, older ones load on demand */
+export const DEFAULT_MESSAGE_PAGE_SIZE = 20;

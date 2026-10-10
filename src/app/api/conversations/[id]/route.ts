@@ -10,12 +10,100 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "@/lib/auth/session";
 import { guardMutationRequest } from "@/lib/api/csrf";
 import {
+    getConversationMeta,
     getConversationWithMessages,
+    getMessagesPaginated,
     updateConversation,
     deleteConversation,
 } from "@/lib/db/queries/conversations";
 import { updateConversationSchema } from "@/lib/validators/schemas";
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
+
+const messagePageQuerySchema = z.object({
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+    cursor: z.string().cuid().optional(),
+    direction: z.enum(["prev", "next"]).optional(),
+});
+
+function messagePageErrorResponse(error: unknown): NextResponse | null {
+    if (error instanceof ZodError) {
+        return NextResponse.json(
+            { error: "Invalid request", details: error.issues },
+            { status: 400 }
+        );
+    }
+    if (error instanceof Error && error.message === "Invalid message cursor") {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    if (error instanceof Error && error.message === "Conversation not found or access denied") {
+        return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
+    }
+    return null;
+}
+
+type MessagePageQuery = {
+    limit?: number;
+    cursor?: string;
+    direction?: "prev" | "next";
+};
+
+// Presence (not validity) decides the mode: an unknown direction still means
+// "a window", and answers 400 rather than silently serving the transcript.
+function readMessagePageQuery(searchParams: URLSearchParams): MessagePageQuery | null {
+    if (
+        !searchParams.has("limit") &&
+        !searchParams.has("cursor") &&
+        !searchParams.has("direction")
+    ) {
+        return null;
+    }
+    return messagePageQuerySchema.parse(Object.fromEntries(searchParams));
+}
+
+async function loadMessageWindow(userId: string, id: string, query: MessagePageQuery) {
+    const [conversation, page] = await Promise.all([
+        getConversationMeta(id, userId),
+        getMessagesPaginated(id, userId, query),
+    ]);
+    if (!conversation) {
+        return NextResponse.json(
+            { error: "Conversation not found" },
+            { status: 404 }
+        );
+    }
+    return NextResponse.json({ ...conversation, ...page });
+}
+
+async function loadFullTranscript(userId: string, id: string) {
+    const conversation = await getConversationWithMessages(id, userId);
+    if (!conversation) {
+        return NextResponse.json(
+            { error: "Conversation not found" },
+            { status: 404 }
+        );
+    }
+    // Note: Ownership is already enforced in getConversationWithMessages via userId filter
+    // No additional check needed here
+    return NextResponse.json({
+        ...conversation,
+        hasMorePrev: false,
+        hasMoreNext: false,
+        prevCursor: null,
+        nextCursor: null,
+    });
+}
+
+// The catch block answers three shapes; inlined, its branches bill to GET,
+// which spent its budget on auth and mode selection long ago.
+function failureResponse(error: unknown): NextResponse {
+    const handled = messagePageErrorResponse(error);
+    if (handled) return handled;
+    console.error("Failed to fetch conversation:", error);
+    return NextResponse.json(
+        { error: "Failed to fetch conversation" },
+        { status: 500 }
+    );
+}
 
 export async function GET(
     req: Request,
@@ -28,25 +116,21 @@ export async function GET(
         }
 
         const { id } = await params;
-        const conversation = await getConversationWithMessages(id, session.user.id);
 
-        if (!conversation) {
-            return NextResponse.json(
-                { error: "Conversation not found" },
-                { status: 404 }
-            );
+        // Any paging param switches from the legacy full transcript to one
+        // window. The full shape keeps its fields and gains the page fields
+        // (all false/null), so old and new clients read the same object.
+        const query = readMessagePageQuery(new URL(req.url).searchParams);
+        if (query) {
+            // Awaited, not returned: a rejection from the window must land in
+            // the catch below for the 400/404 mapping instead of escaping as
+            // an unhandled rejection (a 500 with no shape).
+            return await loadMessageWindow(session.user.id, id, query);
         }
 
-        // Note: Ownership is already enforced in getConversationWithMessages via userId filter
-        // No additional check needed here
-
-        return NextResponse.json(conversation);
+        return await loadFullTranscript(session.user.id, id);
     } catch (error: unknown) {
-        console.error("Failed to fetch conversation:", error);
-        return NextResponse.json(
-            { error: "Failed to fetch conversation" },
-            { status: 500 }
-        );
+        return failureResponse(error);
     }
 }
 

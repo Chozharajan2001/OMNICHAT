@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db/prisma";
 import type { Message, Conversation, Prisma } from "@prisma/client";
+import { DEFAULT_MESSAGE_PAGE_SIZE, MAX_PAGE_SIZE, MIN_PAGE_SIZE } from "@/lib/constants";
 
 /**
  * ────────────────────────────────────────────────────────────────
@@ -152,6 +153,16 @@ export async function findConversationCursor(
 }
 
 /**
+ * Conversation metadata without the transcript. The paginated message endpoint
+ * pairs this with one window so opening a long thread never loads it whole.
+ */
+export async function getConversationMeta(conversationId: string, userId: string) {
+    return await prisma.conversation.findFirst({
+        where: { id: conversationId, userId },
+    });
+}
+
+/**
  * Get a single conversation with its full message history.
  * Returns null if the conversation does not belong to the user.
  */
@@ -172,10 +183,140 @@ export async function getConversationWithMessages(
     });
 }
 
+export interface MessagePageOptions {
+    cursor?: string;
+    direction?: "prev" | "next";
+    limit?: number;
+}
+
+export interface MessagePage {
+    messages: Message[];
+    hasMorePrev: boolean;
+    hasMoreNext: boolean;
+    prevCursor: { id: string } | null;
+    nextCursor: { id: string } | null;
+}
+
+function clampMessageLimit(raw?: number): number {
+    if (!Number.isInteger(raw)) return DEFAULT_MESSAGE_PAGE_SIZE;
+    return Math.max(MIN_PAGE_SIZE, Math.min(MAX_PAGE_SIZE, raw as number));
+}
+
+async function requireOwnedConversation(conversationId: string, userId: string): Promise<void> {
+    const conversation = await prisma.conversation.findFirst({
+        where: { id: conversationId, userId },
+        select: { id: true },
+    });
+    if (!conversation) {
+        throw new Error("Conversation not found or access denied");
+    }
+}
+
+function pageFrom(messages: Message[], hasMorePrev: boolean, hasMoreNext: boolean): MessagePage {
+    if (messages.length === 0) {
+        return { messages, hasMorePrev, hasMoreNext, prevCursor: null, nextCursor: null };
+    }
+    return {
+        messages,
+        hasMorePrev,
+        hasMoreNext,
+        prevCursor: { id: messages[0].id },
+        nextCursor: { id: messages[messages.length - 1].id },
+    };
+}
+
+async function latestMessagePage(conversationId: string, limit: number): Promise<MessagePage> {
+    const rows = await prisma.message.findMany({
+        where: { conversationId },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: limit + 1,
+    });
+    const hasMorePrev = rows.length > limit;
+    if (hasMorePrev) rows.pop();
+    return pageFrom(rows.reverse(), hasMorePrev, false);
+}
+
+interface MessageAnchor {
+    id: string;
+    createdAt: Date;
+}
+
+async function olderMessagePage(
+    conversationId: string,
+    anchor: MessageAnchor,
+    limit: number
+): Promise<MessagePage> {
+    const rows = await prisma.message.findMany({
+        where: {
+            conversationId,
+            OR: [
+                { createdAt: { lt: anchor.createdAt } },
+                { createdAt: anchor.createdAt, id: { lt: anchor.id } },
+            ],
+        },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: limit + 1,
+    });
+    const hasMorePrev = rows.length > limit;
+    if (hasMorePrev) rows.pop();
+    // Newer turns exist by construction: the anchor row itself is newer than
+    // every row returned here (or the window is empty because the anchor is
+    // the oldest message).
+    return pageFrom(rows.reverse(), hasMorePrev, true);
+}
+
+async function newerMessagePage(
+    conversationId: string,
+    anchor: MessageAnchor,
+    limit: number
+): Promise<MessagePage> {
+    const rows = await prisma.message.findMany({
+        where: {
+            conversationId,
+            OR: [
+                { createdAt: { gt: anchor.createdAt } },
+                { createdAt: anchor.createdAt, id: { gt: anchor.id } },
+            ],
+        },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        take: limit + 1,
+    });
+    const hasMoreNext = rows.length > limit;
+    if (hasMoreNext) rows.pop();
+    return pageFrom(rows, true, hasMoreNext);
+}
+
+/**
+ * One window of a conversation's transcript, newest-first paging with an id
+ * tiebreaker (createdAt alone is not unique). No cursor means the latest page.
+ * A cursor naming no message in this conversation is a 400 at the route, the
+ * same contract as the conversation-list cursor.
+ */
+export async function getMessagesPaginated(
+    conversationId: string,
+    userId: string,
+    options: MessagePageOptions = {}
+): Promise<MessagePage> {
+    await requireOwnedConversation(conversationId, userId);
+    const limit = clampMessageLimit(options.limit);
+    if (!options.cursor) {
+        return latestMessagePage(conversationId, limit);
+    }
+    const anchor = await prisma.message.findFirst({
+        where: { id: options.cursor, conversationId },
+    });
+    if (!anchor) {
+        throw new Error("Invalid message cursor");
+    }
+    if (options.direction === "next") {
+        return newerMessagePage(conversationId, anchor, limit);
+    }
+    return olderMessagePage(conversationId, anchor, limit);
+}
+
 /**
  * Add a message to a conversation.
- */
-export async function addMessage(
+ */export async function addMessage(
     conversationId: string,
     role: "system" | "user" | "assistant",
     content: string,

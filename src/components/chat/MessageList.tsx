@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { ArrowDown } from "lucide-react";
 import { MessageBubble } from "./MessageBubble";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useChatStore, type MessagePageInfo } from "@/stores/chat-store";
 import { usePersonalizationStore } from "@/stores/personalization-store";
 import { DEFAULT_WELCOME_MESSAGE } from "@/lib/constants";
 
@@ -20,6 +21,51 @@ interface MessageListProps {
     isLoading?: boolean;
     isInitialLoading?: boolean;
     showTokenCount?: boolean;
+    onLoadOlder: () => Promise<void>;
+}
+
+// Its own component because MessageList spent its branch budget on rendering
+// states. It owns the button, the loading flag, and the scroll anchor: older
+// windows land above the visible transcript, and without anchoring the prepend
+// pushes everything down and the reader loses their place.
+function OlderMessagesPager({ page, scrollRef, onBeginLoad, onLoadOlder }: {
+    page: MessagePageInfo | null;
+    scrollRef: RefObject<HTMLDivElement | null>;
+    onBeginLoad: () => void;
+    onLoadOlder: () => Promise<void>;
+}) {
+    const [loading, setLoading] = useState(false);
+    if (!page?.hasMorePrev) return null;
+
+    const handleLoad = async () => {
+        const el = scrollRef.current;
+        const prevHeight = el?.scrollHeight ?? 0;
+        const prevTop = el?.scrollTop ?? 0;
+        onBeginLoad();
+        setLoading(true);
+        try {
+            await onLoadOlder();
+        } finally {
+            setLoading(false);
+        }
+        requestAnimationFrame(() => {
+            const next = scrollRef.current;
+            if (next) next.scrollTop = prevTop + (next.scrollHeight - prevHeight);
+        });
+    };
+
+    return (
+        <div className="flex justify-center px-4 pb-1 pt-3">
+            <button
+                type="button"
+                onClick={() => void handleLoad()}
+                disabled={loading}
+                className="rounded-full border border-border/70 bg-background/40 px-4 py-2 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:cursor-wait disabled:opacity-60"
+            >
+                {loading ? "Loading older messages..." : "Load older messages"}
+            </button>
+        </div>
+    );
 }
 
 // Within this many pixels of the bottom the reader is still "at the end", so
@@ -59,14 +105,23 @@ function greetingFor(saved: string): string {
     return saved || DEFAULT_WELCOME_MESSAGE;
 }
 
-export function MessageList({ messages, isLoading, isInitialLoading, showTokenCount = false }: MessageListProps) {
+export function MessageList({ messages, isLoading, isInitialLoading, showTokenCount = false, onLoadOlder }: MessageListProps) {
     const scrollRef = useRef<HTMLDivElement>(null);
     const stickToBottom = useRef(true);
     const [awayFromBottom, setAwayFromBottom] = useState(false);
     const chatDensity = usePersonalizationStore((state) => state.chatDensity);
+    // The window lives in the store: selecting it here adds no branches to
+    // this component, and the pager alone decides whether it shows.
+    const page = useChatStore((state) => state.page);
     // An empty greeting is the user's own saved value; the default sentence is
     // applied here at read time instead of being written back into storage.
     const welcomeMessage = usePersonalizationStore((state) => greetingFor(state.welcomeMessage));
+    // Reading history un-sticks the transcript so a reply streaming in below
+    // does not yank the reader back down mid-answer.
+    const stopSticking = useCallback(() => {
+        stickToBottom.current = false;
+        setAwayFromBottom(true);
+    }, []);
 
     const scrollToLatest = useCallback(() => {
         const el = scrollRef.current;
@@ -150,6 +205,12 @@ export function MessageList({ messages, isLoading, isInitialLoading, showTokenCo
                 className="chat-scroll h-full overflow-y-auto rounded-[2rem] border border-border/60 bg-background/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
                 <div className={chatDensity === "compact" ? "flex flex-col py-3" : "flex flex-col py-4"}>
+                    <OlderMessagesPager
+                        page={page}
+                        scrollRef={scrollRef}
+                        onBeginLoad={stopSticking}
+                        onLoadOlder={onLoadOlder}
+                    />
                     {messages.map((message, index) => (
                         <MessageBubble
                             key={message.id || `msg-${index}`}

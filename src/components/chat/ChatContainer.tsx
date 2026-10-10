@@ -6,7 +6,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import { useChat } from "@/hooks/useChat";
+import { useChat, loadOlderMessages } from "@/hooks/useChat";
 import { usePreferences } from "@/hooks/usePreferences";
 import { MessageList } from "./MessageList";
 import { ChatInput } from "./ChatInput";
@@ -127,6 +127,7 @@ export function ChatContainer({ conversationId, className }: ChatContainerProps)
                     messages={messages}
                     isLoading={isLoading}
                     showTokenCount={preferences?.showTokenCount ?? false}
+                    onLoadOlder={loadOlderMessages}
                 />
             </div>
 

@@ -7,8 +7,8 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { useChatStore, type Message } from "@/stores/chat-store";
-import { CHAT_MAX_REQUEST_MESSAGES, STREAM_ERROR_MARKER } from "@/lib/constants";
+import { useChatStore, type Message, type MessagePageInfo } from "@/stores/chat-store";
+import { CHAT_MAX_REQUEST_MESSAGES, DEFAULT_MESSAGE_PAGE_SIZE, STREAM_ERROR_MARKER } from "@/lib/constants";
 
 interface UseOmniChatOptions {
     conversationId?: string | null;
@@ -31,6 +31,82 @@ function createMessageId(): string {
 interface TranscriptMessage {
     role: "system" | "user" | "assistant";
     content: string;
+}
+
+interface StoredMessageRow {
+    id: string;
+    role: string;
+    content: string;
+    modelId?: string;
+    providerId?: string;
+    tokenCount?: number;
+    createdAt: string;
+}
+
+// One reader for both message endpoints: the shape is shared, and two copies
+// of this literal have already drifted once (tokenCount dropped on one path).
+function toStoreMessages(rows: StoredMessageRow[]): Message[] {
+    return rows.map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        modelId: m.modelId,
+        providerId: m.providerId,
+        tokenCount: m.tokenCount,
+        createdAt: m.createdAt,
+    })) as Message[];
+}
+
+export interface OlderMessagePage extends MessagePageInfo {
+    messages: Message[];
+}
+
+function pageInfoOf(data: { hasMorePrev?: unknown; prevCursor?: { id?: unknown } | null }): MessagePageInfo {
+    return {
+        hasMorePrev: data.hasMorePrev === true,
+        prevCursor:
+            data.prevCursor && typeof data.prevCursor.id === "string" ? data.prevCursor.id : null,
+    };
+}
+
+/**
+ * A window older than `cursor`. Pure fetch: the caller prepends to the store,
+ * so a failed page leaves the visible transcript untouched.
+ */
+export async function fetchOlderPage(
+    conversationId: string,
+    cursor: string
+): Promise<OlderMessagePage> {
+    const response = await fetch(
+        `/api/conversations/${conversationId}?limit=${DEFAULT_MESSAGE_PAGE_SIZE}&cursor=${encodeURIComponent(cursor)}&direction=prev`
+    );
+    if (!response.ok) throw new Error("Failed to load older messages");
+
+    const data = await response.json();
+    return {
+        messages: toStoreMessages((data.messages ?? []) as StoredMessageRow[]),
+        ...pageInfoOf(data),
+    };
+}
+
+// Older windows prepend above the visible transcript; a failed page leaves it
+// untouched. Module scope, not a useCallback inside useChat: hook-level
+// callbacks are numbered into the complexity baseline, and inserting one
+// renumbers every callback after it. Reads the store directly so no component
+// effect is involved. Only reachable while a window with a cursor is on
+// screen, which private mode never sets.
+export async function loadOlderMessages(): Promise<void> {
+    const state = useChatStore.getState();
+    const cursor = state.page?.prevCursor;
+    if (!state.conversationId || !cursor) return;
+    try {
+        const older = await fetchOlderPage(state.conversationId, cursor);
+        const current = useChatStore.getState();
+        current.setMessages([...older.messages, ...current.messages]);
+        current.setPage({ hasMorePrev: older.hasMorePrev, prevCursor: older.prevCursor });
+    } catch (err) {
+        console.error("Failed to load older messages:", err);
+    }
 }
 
 /**
@@ -299,27 +375,26 @@ export function useChat(options: UseOmniChatOptions = {}) {
         setError(null);
     }, [setMessages, setConversationId, setConversationTitle]);
 
-    // Load existing conversation
+    // Load existing conversation: the latest window, not the whole transcript.
+    // Threads past one page show "Load older messages" instead of paying the
+    // full history cost up front; sending still works off server-side history.
+    // The window lives in the store next to the messages, so no effect in any
+    // component has to synchronize the two (and a fresh canvas clears both).
     const loadConversation = useCallback(
-        async (id: string) => {
+        async (id: string): Promise<void> => {
             try {
-                const response = await fetch(`/api/conversations/${id}`);
+                const response = await fetch(
+                    `/api/conversations/${id}?limit=${DEFAULT_MESSAGE_PAGE_SIZE}`
+                );
                 if (!response.ok) throw new Error("Failed to load conversation");
 
                 const data = await response.json();
-                const loadedMessages: Message[] = data.messages.map((m: { id: string; role: string; content: string; modelId?: string; providerId?: string; tokenCount?: number; createdAt: string }) => ({
-                    id: m.id,
-                    role: m.role,
-                    content: m.content,
-                    modelId: m.modelId,
-                    providerId: m.providerId,
-                    tokenCount: m.tokenCount,
-                    createdAt: m.createdAt,
-                }));
+                const loadedMessages = toStoreMessages(data.messages as StoredMessageRow[]);
 
                 setMessages(loadedMessages);
                 setConversationId(id);
                 setConversationTitle(data.title);
+                useChatStore.getState().setPage(pageInfoOf(data));
             } catch (err) {
                 // Surface the failure instead of silently showing an empty
                 // or stale transcript.

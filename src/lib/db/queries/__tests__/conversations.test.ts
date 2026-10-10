@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Conversation, Prisma, Project } from "@prisma/client";
+import type { Conversation, Message, Prisma, Project } from "@prisma/client";
 
 type ConversationWithMessages = Prisma.ConversationGetPayload<{
     include: { messages: true };
@@ -21,13 +21,19 @@ const mockPrisma = vi.hoisted(() => ({
     project: {
         findUnique: vi.fn<(args: Prisma.ProjectFindUniqueArgs) => Promise<Project | null>>(),
     },
+    message: {
+        findFirst: vi.fn<(args: Prisma.MessageFindFirstArgs) => Promise<Message | null>>(),
+        findMany: vi.fn<(args: Prisma.MessageFindManyArgs) => Promise<Message[]>>(),
+    },
 }));
 
 vi.mock("@/lib/db/prisma", () => ({ prisma: mockPrisma }));
 
 import {
     createConversation,
+    getConversationMeta,
     getConversations,
+    getMessagesPaginated,
     findConversationCursor,
     getConversationWithMessages,
     updateConversation,
@@ -502,5 +508,140 @@ describe("findConversationCursor (2.5)", () => {
         mockPrisma.conversation.findFirst.mockResolvedValueOnce(null);
 
         await expect(findConversationCursor("user-123", "c-gone", true)).resolves.toBeNull();
+    });
+});
+
+describe("getMessagesPaginated (D2)", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    function msg(id: string, createdAt: string): Message {
+        return {
+            id,
+            conversationId: "conv-1",
+            role: "user",
+            content: id,
+            modelId: null,
+            providerId: null,
+            tokenCount: null,
+            cost: null,
+            createdAt: new Date(createdAt),
+        } as Message;
+    }
+
+    function ownConversation() {
+        mockPrisma.conversation.findFirst.mockResolvedValueOnce({ id: "conv-1" });
+    }
+
+    it("returns the latest window first with no cursor", async () => {
+        ownConversation();
+        mockPrisma.message.findMany.mockResolvedValueOnce([
+            msg("m3", "2026-10-05T08:00:03.000Z"),
+            msg("m2", "2026-10-05T08:00:02.000Z"),
+            msg("m1", "2026-10-05T08:00:01.000Z"),
+        ]);
+
+        const page = await getMessagesPaginated("conv-1", "user-123", { limit: 2 });
+
+        // Stored newest-first, handed back oldest-first for rendering: the
+        // window is the two newest, and the popped lookahead is the oldest.
+        expect(page.messages.map((m) => m.id)).toEqual(["m2", "m3"]);
+        expect(page.hasMorePrev).toBe(true);
+        expect(page.hasMoreNext).toBe(false);
+        expect(page.prevCursor).toEqual({ id: "m2" });
+        expect(page.nextCursor).toEqual({ id: "m3" });
+        expect(mockPrisma.message.findMany.mock.calls[0][0].orderBy).toEqual([
+            { createdAt: "desc" },
+            { id: "desc" },
+        ]);
+    });
+
+    it("pages older than the cursor without repeating it", async () => {
+        ownConversation();
+        const anchor = msg("m3", "2026-10-05T08:00:03.000Z");
+        mockPrisma.message.findFirst.mockResolvedValueOnce(anchor);
+        mockPrisma.message.findMany.mockResolvedValueOnce([
+            msg("m2", "2026-10-05T08:00:02.000Z"),
+        ]);
+
+        const page = await getMessagesPaginated("conv-1", "user-123", { cursor: "m3", limit: 5 });
+
+        expect(page.messages.map((m) => m.id)).toEqual(["m2"]);
+        expect(page.hasMorePrev).toBe(false);
+        // The anchor row itself is newer than this window.
+        expect(page.hasMoreNext).toBe(true);
+        const where = mockPrisma.message.findMany.mock.calls[0][0].where as {
+            OR: unknown[];
+        };
+        expect(where.OR).toHaveLength(2);
+    });
+
+    it("pages newer than the cursor in ascending order", async () => {
+        ownConversation();
+        const anchor = msg("m1", "2026-10-05T08:00:01.000Z");
+        mockPrisma.message.findFirst.mockResolvedValueOnce(anchor);
+        mockPrisma.message.findMany.mockResolvedValueOnce([
+            msg("m2", "2026-10-05T08:00:02.000Z"),
+            msg("m3", "2026-10-05T08:00:03.000Z"),
+        ]);
+
+        const page = await getMessagesPaginated("conv-1", "user-123", {
+            cursor: "m1",
+            direction: "next",
+            limit: 1,
+        });
+
+        expect(page.messages.map((m) => m.id)).toEqual(["m2"]);
+        expect(page.hasMoreNext).toBe(true);
+        expect(page.hasMorePrev).toBe(true);
+    });
+
+    it("reports an empty window honestly", async () => {
+        ownConversation();
+        mockPrisma.message.findMany.mockResolvedValueOnce([]);
+
+        const page = await getMessagesPaginated("conv-1", "user-123");
+
+        expect(page.messages).toEqual([]);
+        expect(page.hasMorePrev).toBe(false);
+        expect(page.hasMoreNext).toBe(false);
+        expect(page.prevCursor).toBeNull();
+        expect(page.nextCursor).toBeNull();
+    });
+
+    it("refuses another user's conversation before touching messages", async () => {
+        mockPrisma.conversation.findFirst.mockResolvedValueOnce(null);
+
+        await expect(getMessagesPaginated("conv-1", "user-123")).rejects.toThrow(
+            "Conversation not found or access denied"
+        );
+        expect(mockPrisma.message.findMany).not.toHaveBeenCalled();
+    });
+
+    it("rejects a cursor naming no message in this conversation", async () => {
+        ownConversation();
+        mockPrisma.message.findFirst.mockResolvedValueOnce(null);
+
+        await expect(
+            getMessagesPaginated("conv-1", "user-123", { cursor: "m-gone" })
+        ).rejects.toThrow("Invalid message cursor");
+        expect(mockPrisma.message.findMany).not.toHaveBeenCalled();
+    });
+
+    it("clamps an absurd limit instead of fetching unbounded", async () => {
+        ownConversation();
+        mockPrisma.message.findMany.mockResolvedValueOnce([]);
+
+        await getMessagesPaginated("conv-1", "user-123", { limit: 5000 });
+
+        expect(mockPrisma.message.findMany.mock.calls[0][0].take).toBe(101);
+    });
+
+    it("reads conversation metadata without the transcript", async () => {
+        const meta = { id: "conv-1", userId: "user-123", title: "T" };
+        mockPrisma.conversation.findFirst.mockResolvedValueOnce(meta);
+
+        await expect(getConversationMeta("conv-1", "user-123")).resolves.toBe(meta);
     });
 });

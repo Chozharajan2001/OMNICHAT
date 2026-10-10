@@ -515,6 +515,7 @@
     "/conversations/{id}": {
       "get": {
         "summary": "Get one conversation with its transcript",
+        "description": "Without paging params the whole transcript comes back. With any of limit/cursor/direction only one window does (default 20, latest first); the shape is identical either way, with page fields that are all false/null on a complete transcript.",
         "operationId": "getConversation",
         "tags": [
           "Conversations"
@@ -522,15 +523,60 @@
         "parameters": [
           {
             "$ref": "#/components/parameters/ConversationId"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Window size, 1-100. Presence switches to paged mode.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Message id from a previous prevCursor/nextCursor. Must name a message in this conversation; anything else is a 400, never a silent fork.",
+            "schema": {
+              "type": "string",
+              "format": "cuid"
+            }
+          },
+          {
+            "name": "direction",
+            "in": "query",
+            "required": false,
+            "description": "Which side of the cursor to read. Defaults to prev (older). No cursor means the latest window regardless of direction.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "prev",
+                "next"
+              ]
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "Conversation including all messages in createdAt order.",
+            "description": "Conversation with messages oldest-first: the whole transcript, or one window when paging.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ConversationWithMessages"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad limit/direction, or a cursor naming no message in this conversation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -2167,7 +2213,11 @@
           {
             "type": "object",
             "required": [
-              "messages"
+              "messages",
+              "hasMorePrev",
+              "hasMoreNext",
+              "prevCursor",
+              "nextCursor"
             ],
             "properties": {
               "messages": {
@@ -2175,7 +2225,33 @@
                 "items": {
                   "$ref": "#/components/schemas/MessageRecord"
                 },
-                "description": "Whole transcript, oldest first. Not paginated."
+                "description": "Oldest first: the whole transcript, or one window when any paging param was sent."
+              },
+              "hasMorePrev": {
+                "type": "boolean",
+                "description": "Older messages exist beyond this window."
+              },
+              "hasMoreNext": {
+                "type": "boolean",
+                "description": "Newer messages exist beyond this window."
+              },
+              "prevCursor": {
+                "nullable": true,
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/Cursor"
+                  }
+                ],
+                "description": "Oldest message of this window; feed its id back as cursor with direction=prev. Null on an empty window."
+              },
+              "nextCursor": {
+                "nullable": true,
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/Cursor"
+                  }
+                ],
+                "description": "Newest message of this window; feed its id back as cursor with direction=next. Null on an empty window."
               }
             }
           }
