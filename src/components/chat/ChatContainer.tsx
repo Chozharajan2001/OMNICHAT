@@ -39,6 +39,13 @@ export function ChatContainer({ conversationId, className }: ChatContainerProps)
         announcedConversationId.current = id;
         bumpListVersion();
     }, [bumpListVersion]);
+    // Stable identity: loadConversation closes over this, and the load effect
+    // keys on loadConversation. An inline closure would be a new function every
+    // render, re-running the load on every render — a fetch storm (measured:
+    // ~90 identical transcript reads opening one thread).
+    const handleChatError = useCallback((err: Error) => {
+        console.error("Chat error:", err);
+    }, []);
     const {
         messages,
         input,
@@ -54,9 +61,7 @@ export function ChatContainer({ conversationId, className }: ChatContainerProps)
         systemPrompt: preferences?.defaultSystemPrompt,
         privateMode: privateChatMode,
         onComplete: handleTurnComplete,
-        onError: (err) => {
-            console.error("Chat error:", err);
-        },
+        onError: handleChatError,
     });
 
     useEffect(() => {
