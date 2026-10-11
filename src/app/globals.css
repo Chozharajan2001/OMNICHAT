@@ -5,7 +5,10 @@
   --foreground: #151515;
   --card: rgba(255, 255, 255, 0.82);
   --card-foreground: #151515;
-  --popover: rgba(255, 255, 255, 0.95);
+  /* Floating menus must be opaque: translucency here lets page text show
+     through the option list. Panels and cards keep their glass surfaces;
+     only popover (used solely by the select/dropdown primitives) is solid. */
+  --popover: #fffdf8;
   --popover-foreground: #151515;
   --primary: #b34a12;
   --primary-foreground: #fff7ec;
@@ -28,6 +31,13 @@
   --sidebar: rgba(255, 250, 242, 0.72);
   --sidebar-foreground: #241d16;
   --sidebar-border: rgba(28, 24, 20, 0.08);
+  /* The mobile drawer is translucent by design (glass), so over a scrim it
+     must not show the dimmed page through it: the drawer gets a solid surface
+     token, the desktop sidebar keeps its glass. */
+  --sidebar-solid: #fffaf2;
+  /* Modal / drawer scrims are warm-tinted, never neutral black: 45% black over
+     the cream light theme reads as dirty grey and muddies everything behind. */
+  --scrim: rgba(41, 32, 24, 0.34);
   --panel: rgba(255, 255, 255, 0.48);
   /* Brand-tinted elevation. Shadows were hardcoded to the dark theme's violet
      and therefore glowed violet under the light theme too. */
@@ -39,7 +49,8 @@
   --foreground: #f6f2ea;
   --card: rgba(29, 30, 39, 0.78);
   --card-foreground: #f6f2ea;
-  --popover: rgba(23, 24, 31, 0.96);
+  /* See the light theme: menus stay readable over any content. */
+  --popover: #1d1e27;
   --popover-foreground: #f6f2ea;
   --primary: #f07a2e;
   --primary-foreground: #1c1005;
@@ -61,6 +72,8 @@
   --sidebar: rgba(16, 17, 24, 0.82);
   --sidebar-foreground: #f6f2ea;
   --sidebar-border: rgba(255, 255, 255, 0.06);
+  --sidebar-solid: #16171f;
+  --scrim: rgba(0, 0, 0, 0.56);
   --panel: rgba(255, 255, 255, 0.03);
   --shadow-primary: rgba(240, 122, 46, 0.28);
 }
@@ -183,8 +196,15 @@ textarea,
     var(--background);
 }
 
+/* A glass surface. The background is read from --glass-bg so a caller can
+   supply its own surface token (the sidebar drawer needs --sidebar, not the
+   generic --panel). It must NOT be a plain `background` declaration: this rule
+   is unlayered, so it beats every Tailwind bg-* utility in @layer utilities
+   regardless of order or specificity -- that is exactly how the sidebar's
+   bg-[var(--sidebar)] became dead code and the drawer rendered --panel
+   (48% white in light, 3% white in dark) instead of its own surface. */
 .glass-panel {
-  background: var(--panel);
+  background: var(--glass-bg, var(--panel));
   backdrop-filter: blur(18px);
 }
 

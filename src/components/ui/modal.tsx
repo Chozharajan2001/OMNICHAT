@@ -110,7 +110,7 @@ export function Modal({
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
             <div
                 aria-hidden="true"
-                className="absolute inset-0 bg-black/45 backdrop-blur-sm"
+                className="absolute inset-0 bg-[var(--scrim)] backdrop-blur-sm"
                 onMouseDown={onClose}
             />
             <div

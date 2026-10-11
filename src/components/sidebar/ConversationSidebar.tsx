@@ -425,7 +425,7 @@ export function ConversationSidebar() {
                 <button
                     type="button"
                     aria-label="Close sidebar"
-                    className="fixed inset-0 z-30 bg-black/45 backdrop-blur-sm"
+                    className="fixed inset-0 z-30 bg-[var(--scrim)] backdrop-blur-sm"
                     onClick={() => setSidebarOpen(false)}
                 />
             ) : null}
@@ -436,8 +436,15 @@ export function ConversationSidebar() {
                 // through invisible controls. inert removes both at once.
                 inert={!isSidebarOpen}
                 className={cn(
-                    "glass-panel fixed inset-y-0 left-0 z-40 flex h-dvh flex-col border-r border-[var(--sidebar-border)] bg-[var(--sidebar)] text-[var(--sidebar-foreground)] transition-all duration-300",
+                    "glass-panel fixed inset-y-0 left-0 z-40 flex h-dvh flex-col border-r border-[var(--sidebar-border)] text-[var(--sidebar-foreground)] transition-all duration-300",
                     "w-[min(88vw,22rem)]",
+                    // --glass-bg, not bg-*: glass-panel is unlayered CSS and
+                    // outranks any bg utility, so the surface is swapped by
+                    // variable. Below lg the drawer floats over a scrim and must
+                    // be solid (glass over a veil mixes both colours); the
+                    // desktop sidebar keeps its translucent surface.
+                    "[--glass-bg:var(--sidebar)]",
+                    "max-lg:[--glass-bg:var(--sidebar-solid)]",
                     isSidebarOpen ? "translate-x-0" : "-translate-x-full",
                     "lg:relative lg:z-0 lg:translate-x-0",
                     isSidebarOpen ? "lg:w-72" : "lg:w-0 lg:overflow-hidden"
