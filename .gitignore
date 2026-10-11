@@ -51,11 +51,8 @@ yarn-error.log*
 
 # tauri / rust (build outputs and staged runtimes, never tracked)
 src-tauri/target/
-src-tauri/.node-dist/
-src-tauri/staged-modules/
-src-tauri/staged-next
-src-tauri/staged-app
-src-tauri/staged-static
+src-tauri/staging/
+src-tauri/.node-runtime/
 src-tauri/gen/
 next-env.d.ts
 
