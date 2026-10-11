@@ -1,4 +1,4 @@
-import { render, screen, cleanup } from "@testing-library/react";
+import { fireEvent, render, screen, cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MessageBubble } from "./MessageBubble";
 
@@ -110,5 +110,57 @@ describe("MessageBubble", () => {
         const longContent = "x".repeat(5000);
         render(<MessageBubble role="assistant" content={longContent} />);
         expect(screen.getByText(longContent)).toBeDefined();
+    });
+
+    it("copies through the async clipboard API when granted", async () => {
+        const writeText = vi.fn(async () => undefined);
+        Object.defineProperty(navigator, "clipboard", {
+            value: { writeText },
+            configurable: true,
+        });
+
+        render(<MessageBubble role="user" content="copy me" />);
+        fireEvent.click(screen.getByLabelText("Copy message to clipboard"));
+
+        expect(writeText).toHaveBeenCalledWith("copy me");
+        expect(await screen.findByLabelText("Message copied")).toBeDefined();
+
+        // jsdom has no clipboard API of its own; leave the double as found.
+        Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+    });
+
+    it("falls back to execCommand when the grant is denied", async () => {
+        Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+        const execCommand = vi.fn(() => true);
+        Object.defineProperty(document, "execCommand", { value: execCommand, configurable: true });
+
+        render(<MessageBubble role="user" content="copy me" />);
+        fireEvent.click(screen.getByLabelText("Copy message to clipboard"));
+
+        expect(execCommand).toHaveBeenCalledWith("copy");
+        expect(await screen.findByLabelText("Message copied")).toBeDefined();
+    });
+
+    it("falls through to execCommand when writeText denies despite existing", async () => {
+        const writeText = vi.fn(async () => {
+            throw new DOMException("Write permission denied", "NotAllowedError");
+        });
+        Object.defineProperty(navigator, "clipboard", {
+            value: { writeText },
+            configurable: true,
+        });
+        const execCommand = vi.fn(() => true);
+        Object.defineProperty(document, "execCommand", { value: execCommand, configurable: true });
+
+        render(<MessageBubble role="user" content="copy me" />);
+        fireEvent.click(screen.getByLabelText("Copy message to clipboard"));
+
+        expect(writeText).toHaveBeenCalledWith("copy me");
+        // The denial surfaces on a microtask (awaited rejection), after the
+        // synchronous assertions above already ran.
+        await vi.waitFor(() => expect(execCommand).toHaveBeenCalledWith("copy"));
+        expect(await screen.findByLabelText("Message copied")).toBeDefined();
+
+        Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
     });
 });

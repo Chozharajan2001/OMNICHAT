@@ -86,6 +86,50 @@ interface MessageBubbleProps {
     tokenCount?: number;
 }
 
+// The async Clipboard API needs a secure context and a grant that LAN/`http`
+// origins and some embedded webviews never give (NotAllowedError). The legacy
+// execCommand path works there, so a denied grant falls through to it instead
+// of failing the copy outright.
+function copyViaExecCommand(text: string): void {
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.select();
+    try {
+        if (!document.execCommand("copy")) {
+            throw new Error("execCommand refused the copy");
+        }
+    } finally {
+        area.remove();
+    }
+}
+
+async function writeToClipboard(text: string): Promise<void> {
+    // Existence is not permission: the API object is present in contexts that
+    // still deny the write (non-secure origins, withheld grants), and that
+    // denial must fall through to the legacy path, not to the error toast.
+    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        try {
+            await Promise.race([navigator.clipboard.writeText(text), clipboardTimeout()]);
+            return;
+        } catch {
+            // Denied, timed out, or otherwise failed: fall through below.
+        }
+    }
+    copyViaExecCommand(text);
+}
+
+// A withheld grant does not always reject: in a backgrounded tab the write
+// can hang indefinitely, which would leave the button dead with no feedback.
+// Losing the race falls through to execCommand like a denial does.
+function clipboardTimeout(): Promise<never> {
+    return new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("clipboard write timed out")), 1500);
+    });
+}
+
 export function MessageBubble({
     role,
     content,
@@ -99,20 +143,22 @@ export function MessageBubble({
     const { success, error: toastError } = useToast();
     const isCompact = density === "compact";
 
-    const handleCopy = async () => {
-        if (!content || typeof navigator === "undefined" || !navigator.clipboard) {
+    const handleCopy = () => {
+        if (!content) {
             return;
         }
 
-        try {
-            await navigator.clipboard.writeText(content);
-            setCopied(true);
-            success("Message copied");
-            setTimeout(() => setCopied(false), 1200);
-        } catch (error) {
-            console.error("Failed to copy message:", error);
-            toastError("Copy failed");
-        }
+        void writeToClipboard(content).then(
+            () => {
+                setCopied(true);
+                success("Message copied");
+                setTimeout(() => setCopied(false), 1200);
+            },
+            (error: unknown) => {
+                console.error("Failed to copy message:", error);
+                toastError("Copy failed", "Select the text manually to copy it.");
+            }
+        );
     };
 
     return (

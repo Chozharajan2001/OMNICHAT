@@ -160,6 +160,35 @@ function pickConversationId(
     return fromRoute ?? fromStore;
 }
 
+// The server answers the id the client named: it must exist and belong to the
+// caller, never silently forked. When it does not, the id sitting in the store
+// is stale (deleted in another tab, database reset) and every later turn would
+// 404 the same way -- so the id is dropped and the kept user message sends
+// fresh on the next try, instead of dead-ending the composer until a reload.
+const STALE_CONVERSATION_MESSAGE = "Conversation not found";
+
+function reportSendError(
+    err: unknown,
+    report: {
+        setError: (message: string | null) => void;
+        dropConversation: () => void;
+        removeMessage: (id: string) => void;
+        assistantMsgId: string;
+        onError?: (error: Error) => void;
+    }
+): void {
+    console.error("Chat error:", err);
+    const message = err instanceof Error ? err.message : "An error occurred";
+    if (message === STALE_CONVERSATION_MESSAGE) {
+        report.dropConversation();
+        report.setError("That conversation is gone. Send again to start a fresh one.");
+    } else {
+        report.setError(message);
+    }
+    report.onError?.(err as Error);
+    report.removeMessage(report.assistantMsgId);
+}
+
 export function useChat(options: UseOmniChatOptions = {}) {
     const {
         conversationId: conversationIdProp,
@@ -324,13 +353,13 @@ export function useChat(options: UseOmniChatOptions = {}) {
                     return;
                 }
 
-                console.error("Chat error:", err);
-                const errorMessage = err instanceof Error ? err.message : "An error occurred";
-                setError(errorMessage);
-                onError?.(err as Error);
-
-                // Remove the empty assistant message on error
-                removeMessage(assistantMsgId);
+                reportSendError(err, {
+                    setError,
+                    dropConversation: () => setConversationId(null),
+                    removeMessage,
+                    assistantMsgId,
+                    onError,
+                });
             } finally {
                 setIsLoading(false);
                 abortControllerRef.current = null;

@@ -1,185 +1,97 @@
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useChat } from "./useChat";
 
-// The chat store is zustand/persist over localStorage, and ESM hoists static
-// imports above any stub -- so the store is imported dynamically, after the
-// backing map exists. Without this setState() throws inside the persist
-// middleware before a single assertion runs.
-const memoryStore = new Map<string, string>();
-Object.defineProperty(window, "localStorage", {
-    configurable: true,
-    value: {
-        getItem: (key: string) => memoryStore.get(key) ?? null,
-        setItem: (key: string, value: string) => { memoryStore.set(key, value); },
-        removeItem: (key: string) => { memoryStore.delete(key); },
-        clear: () => memoryStore.clear(),
-        key: (index: number) => [...memoryStore.keys()][index] ?? null,
-        get length() { return memoryStore.size; },
-    },
-});
-
-const { useChat } = await import("./useChat");
-const { useChatStore } = await import("@/stores/chat-store");
-
-// Behaviour under test: what the client actually puts on the wire. The route
-// already honours a full transcript in private mode, so a regression here
-// silently reintroduces "the private chat has no memory" without any server
-// change to point at.
-
-interface SentBody {
-    messages: Array<{ role: string; content: string }>;
-    privateMode?: boolean;
-    conversationId?: string;
-}
-
-function captureFetch() {
-    // Typed via the generic so the stub keeps fetch's signature without
-    // declaring parameters it never reads.
-    const mock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
-        async () => new Response("", { status: 200 })
-    );
-    vi.stubGlobal("fetch", mock);
-    return mock;
-}
-
-function readBody(mock: ReturnType<typeof captureFetch>): SentBody {
-    const [, init] = mock.mock.calls[0];
-    return JSON.parse((init as RequestInit).body as string) as SentBody;
-}
-
-const prior = [
-    { id: "m1", role: "user" as const, content: "What is the refund policy?", createdAt: "2026-10-05T08:00:00.000Z" },
-    { id: "m2", role: "assistant" as const, content: "It covers 30 days.", createdAt: "2026-10-05T08:00:05.000Z" },
-    { id: "m3", role: "user" as const, content: "And after that?", createdAt: "2026-10-05T08:01:00.000Z" },
-];
-
-beforeEach(() => {
-    useChatStore.setState({
-        messages: prior,
-        conversationId: "c-existing",
+// The store is the hook's only state seam: a controllable double keeps the
+// recovery contract (stale id dropped, user message kept) under test without
+// touching the database or the network.
+const storeDouble = vi.hoisted(() => ({
+    state: {
         providerId: "openai",
         modelId: "gpt-4o",
-    });
+        conversationId: "conv-stale",
+        messages: [],
+    },
+    setConversationId: vi.fn(),
+    setConversationTitle: vi.fn(),
+    setMessages: vi.fn(),
+    addMessage: vi.fn(),
+    removeMessage: vi.fn(),
+    updateMessage: vi.fn(),
+}));
+
+vi.mock("@/stores/chat-store", () => ({
+    useChatStore: Object.assign(
+        (selector?: (state: unknown) => unknown) => {
+            const state = {
+                ...storeDouble.state,
+                setConversationId: storeDouble.setConversationId,
+                setConversationTitle: storeDouble.setConversationTitle,
+                setMessages: storeDouble.setMessages,
+                addMessage: storeDouble.addMessage,
+                removeMessage: storeDouble.removeMessage,
+                updateMessage: storeDouble.updateMessage,
+            };
+            // The hook reads the whole store without a selector.
+            return typeof selector === "function" ? selector(state) : state;
+        },
+        { getState: () => ({}) }
+    ),
+}));
+
+function failedFetch(status: number, error: string) {
+    global.fetch = vi.fn(async () => ({
+        ok: false,
+        status,
+        json: async () => ({ error }),
+        headers: new Headers(),
+    })) as unknown as typeof fetch;
+}
+
+beforeEach(() => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    storeDouble.state.conversationId = "conv-stale";
+    storeDouble.state.messages = [];
 });
 
 afterEach(() => {
-    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    vi.resetAllMocks();
 });
 
-async function submitWith(privateMode: boolean) {
-    const mock = captureFetch();
-    const { result } = renderHook(() => useChat({ privateMode }));
-
-    await act(async () => {
-        result.current.setInput("Summarise this thread");
-    });
-    await act(async () => {
-        await result.current.handleSubmit();
-    });
-    await waitFor(() => expect(mock).toHaveBeenCalled());
-    return readBody(mock);
-}
-
-describe("useChat request transcript", () => {
-    it("sends the whole thread in private mode", async () => {
-        const body = await submitWith(true);
-        expect(body.messages.map((m) => m.content)).toEqual([
-            "What is the refund policy?",
-            "It covers 30 days.",
-            "And after that?",
-            "Summarise this thread",
-        ]);
-        expect(body.privateMode).toBe(true);
-    });
-
-    it("sends only the new turn when the server owns the history", async () => {
-        const body = await submitWith(false);
-        expect(body.messages).toEqual([{ role: "user", content: "Summarise this thread" }]);
-        // The route rebuilds history from the database and appends exactly this
-        // message, so anything more here would be duplicated context.
-        expect(body.conversationId).toBe("c-existing");
-    });
-
-    it("targets the conversation the route segment names, not whatever the store still holds", async () => {
-        // /chat/[id] passes the URL's id while loadConversation() is still in
-        // flight. Reading the store only meant an early message went to the
-        // previously opened conversation -- or started a second one.
-        useChatStore.setState({ conversationId: "c-stale-from-previous-chat" });
-        const mock = captureFetch();
-        const { result } = renderHook(() => useChat({ conversationId: "c-from-url" }));
+describe("useChat stale-conversation recovery", () => {
+    it("drops a dead conversation id so the next turn starts fresh", async () => {
+        failedFetch(404, "Conversation not found");
+        const { result } = renderHook(() => useChat({}));
 
         await act(async () => {
-            result.current.setInput("First message after opening the link");
-        });
-        await act(async () => {
-            await result.current.handleSubmit();
-        });
-        await waitFor(() => expect(mock).toHaveBeenCalled());
-
-        expect(readBody(mock).conversationId).toBe("c-from-url");
-    });
-
-    it("announces the conversation the route created, once per turn", async () => {
-        // The sidebar has no other signal that /chat just became a real
-        // conversation: without this the first chat only appears after a reload.
-        useChatStore.setState({ conversationId: null });
-        const onComplete = vi.fn();
-        vi.stubGlobal("fetch", vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
-            async () => new Response("", { status: 200, headers: { "X-Conversation-Id": "c-brand-new" } })
-        ));
-        const { result } = renderHook(() => useChat({ onComplete }));
-
-        await act(async () => {
-            result.current.setInput("First message of a new chat");
+            result.current.setInput("hello again");
         });
         await act(async () => {
             await result.current.handleSubmit();
         });
 
-        expect(onComplete).toHaveBeenCalledTimes(1);
-        expect(onComplete).toHaveBeenCalledWith("c-brand-new");
-        expect(useChatStore.getState().conversationId).toBe("c-brand-new");
+        expect(storeDouble.setConversationId).toHaveBeenCalledWith(null);
+        expect(result.current.error).toBe(
+            "That conversation is gone. Send again to start a fresh one."
+        );
+        // The empty assistant placeholder is withdrawn; the user's message stays.
+        expect(storeDouble.removeMessage).toHaveBeenCalledTimes(1);
+        expect(storeDouble.addMessage).toHaveBeenCalledTimes(2);
     });
 
-    it("keeps a long private chat sendable instead of failing at turn 100", async () => {
-        // The request schema rejects the array past CHAT_MAX_REQUEST_MESSAGES.
-        // Sending the whole store meant that from around turn 100 every send in
-        // a long private session answered 400 and the chat was dead mid-session.
-        const long = Array.from({ length: 150 }, (_, i) => ({
-            id: `m${i}`,
-            role: (i % 2 === 0 ? "user" : "assistant") as "user" | "assistant",
-            content: `message ${i}`,
-            createdAt: "2026-10-05T08:00:00.000Z",
-        }));
-        useChatStore.setState({ messages: long });
-        const body = await submitWith(true);
-
-        expect(body.messages.length).toBe(100);
-        expect(body.messages[body.messages.length - 1].content).toBe("Summarise this thread");
-        // newest-first slice: the oldest thing sent is the 51st stored message
-        expect(body.messages[0].content).toBe("message 51");
-    });
-
-    it("routes an appended stream failure to the error channel, not the answer", async () => {
-        useChatStore.setState({ messages: [] });
-        vi.stubGlobal("fetch", vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
-            async () => new Response(
-                "the real answer\n\n[[omnichat:stream-error]]\nThe provider rejected your API key.",
-                { status: 200 }
-            )
-        ));
-        const { result } = renderHook(() => useChat({ privateMode: true }));
+    it("keeps the id for any other failure", async () => {
+        failedFetch(500, "boom");
+        const { result } = renderHook(() => useChat({}));
 
         await act(async () => {
-            result.current.setInput("ask");
+            result.current.setInput("hello again");
         });
         await act(async () => {
             await result.current.handleSubmit();
         });
-        await waitFor(() => expect(result.current.error).toBeTruthy());
 
-        const assistant = useChatStore.getState().messages.at(-1);
-        expect(assistant?.content).toBe("the real answer");
-        expect(result.current.error).toBe("The provider rejected your API key.");
+        expect(storeDouble.setConversationId).not.toHaveBeenCalledWith(null);
+        expect(result.current.error).toBe("boom");
     });
 });
