@@ -159,11 +159,20 @@ This repository uses pnpm (not npm). The Git root is `omnichat/` (not the parent
 ## Desktop (Tauri)
 
 ```bash
+node scripts/build-desktop.mjs    # full pipeline: Next.js → Node runtime → icons → installer
 pnpm tauri:dev                    # Development with hot reload
-pnpm tauri:build:windows          # Windows installer
-pnpm tauri:build:macos            # macOS (Apple Silicon)
 ```
 
+The script builds the Windows installer locally (`src-tauri/target/release/bundle/`);
+macOS (`.dmg`) and Linux (`.AppImage`/`.deb`) build in CI
+(`.github/workflows/desktop.yml`, manual run or `v*` tag) because each OS can
+only bundle on its own runner.
+
+First run needs no setup: the app creates `%APPDATA%/OmniChat` (Windows),
+`~/Library/Application Support/OmniChat` (macOS) or `~/.local/share/OmniChat`
+(Linux), generates its `AUTH_SECRET`/`ENCRYPTION_SECRET_KEY` into
+`omnichat.env` there on first launch, keeps the SQLite database beside it, and
+ships its own Node.js runtime — the target machine needs nothing installed.
 Desktop mode uses SQLite automatically. See `src-tauri/tauri.conf.json` for CSP and API restrictions.
 
 ## Docker
@@ -307,7 +316,19 @@ docker run --rm -e DATABASE_URL="$DATABASE_URL" omnichat-migrate \
   node scripts/users/add-user.mjs --email you@example.com --verified
 ```
 
-**No one-click deploy badge is offered.** A badge would start a service that
-fails both checks above — no schema and a localhost origin — and would look
-broken before an operator had a chance to set the variables. Use the blueprint
-files directly, after setting the environment.
+**One-click cloud deploy.** These buttons start the flow; three manual steps
+after them are still mandatory (below), so a fresh service is verified, not
+assumed:
+
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.app/new/template?template=https://github.com/Chozharajan2001/OMNICHAT)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Chozharajan2001/OMNICHAT)
+
+1. **Root directory is `omnichat/`** — configs live in the app directory, not the
+   repository root. Set the service root accordingly.
+2. **Environment** — `DATABASE_URL`, `AUTH_SECRET`, `ENCRYPTION_SECRET_KEY`,
+   `NEXTAUTH_URL` + `APP_ORIGIN` (both to the public URL),
+   `RATE_LIMIT_BACKEND=memory` for a single instance.
+3. **Schema + account** — run the migrate step once (`prisma db push` against
+   the service database), then create the operator account explicitly as above.
+   Until then `/api/health` answers `503` and sign-in fails closed — that is the
+   deployment telling you step 3 is pending, not a broken build.

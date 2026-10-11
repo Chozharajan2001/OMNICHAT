@@ -6,6 +6,7 @@
   "scripts": {
     "prepare": "node scripts/quality/link-hooks.mjs",
     "dev": "next dev",
+    "prebuild": "node scripts/fixup-native-stubs.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint . --max-warnings 0",

@@ -7,7 +7,7 @@
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:3000",
     "beforeBuildCommand": "pnpm build",
-    "frontendDist": "../.next"
+    "frontendDist": "../public"
   },
   "app": {
     "withGlobalTauri": true,
@@ -63,9 +63,15 @@
       }
     },
     "resources": {
-      "../.next/standalone/**": "./",
-      "../.next/static/**": "./.next/static",
-      "../public/**": "./public"
+      "./staged-next/standalone/server.js": "./server.js",
+      "./staged-next/standalone/package.json": "./package.json",
+      "./staged-next/BUILD_ID": "./BUILD_ID",
+      "./staged-next/server/**": "./.next/server",
+      "./staged-next/static/**": "./.next/static",
+      "../public/*": "./public",
+      "../public/icons/*": "./public/icons",
+      "./.node-dist/**": "./node",
+      "./staged-modules/**": "./node_modules"
     }
   },
   "plugins": {

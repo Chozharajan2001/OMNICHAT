@@ -1,8 +1,11 @@
-use std::env;
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::sync::Mutex;
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use rand::RngCore;
 use tauri::Manager;
+use tauri::path::BaseDirectory;
 
 // Store the server process to kill it on exit
 static SERVER_PROCESS: Mutex<Option<Child>> = Mutex::new(None);
@@ -26,39 +29,112 @@ fn ensure_data_dir() -> PathBuf {
     data_dir
 }
 
+/// First-run secrets, persisted beside the database. A desktop user has no
+/// `.env` file, and without these the server refuses to boot (Auth.js
+/// "Configuration") or to touch the vault. Generated once with a CSPRNG;
+/// missing keys are added without touching existing ones, so reinstalls and
+/// upgrades keep working against the same database.
+fn ensure_secrets(data_dir: &Path) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
+    let path = data_dir.join("omnichat.env");
+    let mut vars: HashMap<String, String> = std::fs::read_to_string(&path)
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                return None;
+            }
+            let (key, value) = line.split_once('=')?;
+            Some((key.trim().to_string(), value.trim().to_string()))
+        })
+        .collect();
+
+    let mut dirty = false;
+    for key in ["AUTH_SECRET", "ENCRYPTION_SECRET_KEY"] {
+        let missing = vars.get(key).map(|value| value.len() < 32).unwrap_or(true);
+        if missing {
+            let mut bytes = [0u8; 32];
+            rand::thread_rng().fill_bytes(&mut bytes);
+            vars.insert(key.to_string(), BASE64.encode(bytes));
+            dirty = true;
+        }
+    }
+
+    if dirty {
+        let mut contents = String::from("# OmniChat desktop secrets. Do not share this file.\n");
+        for key in ["AUTH_SECRET", "ENCRYPTION_SECRET_KEY"] {
+            contents.push_str(&format!("{}={}\n", key, vars[key]));
+        }
+        std::fs::write(&path, contents)?;
+    }
+
+    Ok(vars)
+}
+
+/// The Node runtime for the bundled server. Built installers ship their own
+/// (`scripts/build-desktop.mjs` stages it under `node/`); a PATH fallback
+/// remains so development builds and exotic installs still start.
+fn node_binary(resource_dir: &Path) -> PathBuf {
+    #[cfg(target_os = "windows")]
+    let bundled = resource_dir.join("node").join("node.exe");
+    #[cfg(not(target_os = "windows"))]
+    let bundled = resource_dir.join("node").join("node");
+
+    if bundled.exists() {
+        return bundled;
+    }
+
+    #[cfg(target_os = "windows")]
+    return PathBuf::from("node.exe");
+    #[cfg(not(target_os = "windows"))]
+    return PathBuf::from("node");
+}
+
 /// Start the Next.js standalone server
-fn start_server() -> Result<Child, Box<dyn std::error::Error>> {
+fn start_server(resource_dir: &Path) -> Result<Child, Box<dyn std::error::Error>> {
     let data_dir = ensure_data_dir();
     let db_path = data_dir.join("omnichat.db");
-    
+    let secrets = ensure_secrets(&data_dir)?;
+
     // Set environment variables for the server
     let port = "3000";
     let db_url = format!("file:{}", db_path.display());
-    
+
     println!("OmniChat Data Directory: {}", data_dir.display());
     println!("Database Path: {}", db_path.display());
-    
-    #[cfg(target_os = "windows")]
-    let server_path = {
-        let exe_dir = env::current_exe()?.parent().unwrap().to_path_buf();
-        exe_dir.join("server").join("server.js")
-    };
-    
-    #[cfg(not(target_os = "windows"))]
-    let server_path = {
-        let exe_dir = env::current_exe()?.parent().unwrap().to_path_buf();
-        exe_dir.join("server").join("server.js")
-    };
-    
+
+    // The standalone bundle is mapped to the resource root
+    // (tauri.conf.json `resources`), so server.js sits beside this process's
+    // resource directory -- not beside the executable, which the old path
+    // assumed and which does not hold on an installed app.
+    let server_path = resource_dir.join("server.js");
+    let node = node_binary(resource_dir);
+
     println!("Starting Next.js server from: {}", server_path.display());
-    
-    let child = Command::new("node")
+
+    let child = Command::new(&node)
         .arg(&server_path)
         .env("PORT", port)
         .env("DATABASE_URL", &db_url)
         .env("NODE_ENV", "production")
-        .spawn()?;
-    
+        .env("DESKTOP_MODE", "true")
+        .env("AUTH_SECRET", &secrets["AUTH_SECRET"])
+        .env("ENCRYPTION_SECRET_KEY", &secrets["ENCRYPTION_SECRET_KEY"])
+        .spawn()
+        .map_err(|error| {
+            if node.file_name().map(|name| name == "node" || name == "node.exe").unwrap_or(false)
+                && error.kind() == std::io::ErrorKind::NotFound
+            {
+                Box::new(std::io::Error::new(
+                    error.kind(),
+                    "Node.js runtime not found: the installer ships its own, so a missing \
+                     bundled runtime means a broken install. Reinstall OmniChat.",
+                )) as Box<dyn std::error::Error>
+            } else {
+                Box::new(error) as Box<dyn std::error::Error>
+            }
+        })?;
+
     Ok(child)
 }
 
@@ -85,8 +161,9 @@ pub fn run() {
             {
                 // Production mode: Start the embedded Next.js server
                 let server_url = "http://localhost:3000";
-                
-                match start_server() {
+                let resource_dir = app.path().resolve(".", BaseDirectory::Resource)?;
+
+                match start_server(&resource_dir) {
                     Ok(child) => {
                         // Store the process for cleanup
                         *SERVER_PROCESS.lock().unwrap() = Some(child);

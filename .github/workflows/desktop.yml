@@ -1,0 +1,64 @@
+# OmniChat desktop installers (repository root = omnichat/)
+#
+# Builds the Tauri bundle per OS. Windows is also built locally; macOS and
+# Linux can only be built on their own runners, so this workflow is the only
+# path to .dmg/.AppImage/.deb. Runs on demand and on version tags.
+
+name: Desktop
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    name: Bundle ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: windows-nsis
+          - os: macos-latest
+            artifact: macos-dmg
+          - os: ubuntu-22.04
+            artifact: linux-appimage
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.8.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - uses: dtolnay/rust-toolchain@stable
+      # Tauri v2 on Linux needs the system webview stack; macOS and Windows
+      # runners already carry theirs.
+      - name: Linux webview dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential curl wget file \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf
+      - run: pnpm install --frozen-lockfile
+      - name: Build the installer (Next.js + Node runtime + Tauri bundle)
+        env:
+          DATABASE_URL: file:./build.db
+          AUTH_SECRET: ci-auth-secret-not-for-production
+          ENCRYPTION_SECRET_KEY: ci-encryption-secret-not-for-production
+        run: node scripts/build-desktop.mjs
+      - name: Upload installer bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: omnichat-${{ matrix.artifact }}
+          path: src-tauri/target/release/bundle/
+          if-no-files-found: error

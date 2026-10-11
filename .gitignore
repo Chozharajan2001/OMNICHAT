@@ -48,6 +48,15 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
+
+# tauri / rust (build outputs and staged runtimes, never tracked)
+src-tauri/target/
+src-tauri/.node-dist/
+src-tauri/staged-modules/
+src-tauri/staged-next
+src-tauri/staged-app
+src-tauri/staged-static
+src-tauri/gen/
 next-env.d.ts
 
 /src/generated/prisma
