@@ -7,6 +7,7 @@
 
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { PrismLight as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import bash from "react-syntax-highlighter/dist/esm/languages/prism/bash";
@@ -219,9 +220,10 @@ export function MessageBubble({
                         </Button>
                     </div>
 
-                    <div className="prose prose-sm dark:prose-invert max-w-none break-words">
+                    <div className="prose max-w-none break-words">
                         {content ? (
                             <ReactMarkdown
+                                remarkPlugins={[remarkGfm]}
                                 disallowedElements={["script", "iframe", "object", "embed", "form", "input", "button"]}
                                 components={{
                                     code({ className, children, ...props }) {
@@ -268,6 +270,16 @@ export function MessageBubble({
                                         return (
                                             <div className="overflow-x-auto rounded-xl">
                                                 {children}
+                                            </div>
+                                        );
+                                    },
+                                    // Wide tables scroll inside the bubble instead of
+                                    // breaking the thread layout on narrow screens.
+                                    // prose keeps styling table/th/td through the wrapper.
+                                    table({ children }) {
+                                        return (
+                                            <div className="overflow-x-auto rounded-xl">
+                                                <table>{children}</table>
                                             </div>
                                         );
                                     },

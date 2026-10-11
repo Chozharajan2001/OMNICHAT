@@ -3,8 +3,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MessageBubble } from "./MessageBubble";
 
 // Mock dependencies that require browser APIs or complex setup
+const markdownProps: Array<{ remarkPlugins?: unknown[] }> = [];
 vi.mock("react-markdown", () => ({
-    default: ({ children }: { children: string }) => <div data-testid="markdown">{children}</div>,
+    default: (props: { children: string; remarkPlugins?: unknown[] }) => {
+        markdownProps.push(props);
+        return <div data-testid="markdown">{props.children}</div>;
+    },
 }));
 
 vi.mock("react-syntax-highlighter", () => ({
@@ -110,6 +114,20 @@ describe("MessageBubble", () => {
         const longContent = "x".repeat(5000);
         render(<MessageBubble role="assistant" content={longContent} />);
         expect(screen.getByText(longContent)).toBeDefined();
+    });
+
+    it("enables GFM so tables, strikethrough and task lists parse", () => {
+        markdownProps.length = 0;
+        render(
+            <MessageBubble
+                role="assistant"
+                content={"| Stage | Technique |\n|---|---|\n| Design | Efficient |\n\n- [x] done\n\n~~gone~~"}
+            />
+        );
+
+        const last = markdownProps.at(-1);
+        expect(last?.remarkPlugins).toHaveLength(1);
+        expect(typeof last?.remarkPlugins?.[0]).toBe("function");
     });
 
     it("copies through the async clipboard API when granted", async () => {
