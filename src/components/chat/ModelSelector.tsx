@@ -24,6 +24,16 @@ import { KeyRound, Sparkles } from "lucide-react";
 
 const VALUE_SEPARATOR = ":";
 
+// The picker lists only providers with a confirmed credential. Keyless
+// providers used to render as disabled rows with "(No key)" tags, which buried
+// the usable models under entries no click could ever reach; connecting a new
+// provider is the providers page's job, one click away.
+export function visibleProviders(keys: { providerId: string; isValid: boolean }[]) {
+    return SUPPORTED_PROVIDERS.filter((option) =>
+        keys.some((key) => key.providerId === option.id && key.isValid)
+    );
+}
+
 // Radix hands back the whole `${providerId}:${modelId}` string. Model ids are
 // not forbidden from containing a colon, and `split(":")` would truncate at the
 // second one, so the pair is cut at the FIRST separator only.
@@ -61,7 +71,7 @@ function ModelPicker() {
 
     // A key stored but never confirmed counts as absent here: without a working
     // credential the provider's models cannot be used.
-    const hasKey = (id: string) => keys.some((key) => key.providerId === id && key.isValid);
+    const listedProviders = visibleProviders(keys);
 
     // A persisted selection can outlive its credential (key removed, or
     // defaults naming a provider never connected): the header would offer an
@@ -116,21 +126,15 @@ function ModelPicker() {
                 </div>
             </SelectTrigger>
             <SelectContent>
-                {SUPPORTED_PROVIDERS.map((option) => (
+                {listedProviders.map((option) => (
                     <SelectGroup key={option.id}>
-                        <SelectLabel className="flex items-center gap-2">
+                        <SelectLabel>
                             <span>{option.name}</span>
-                            {!hasKey(option.id) && (
-                                <span className="text-xs text-muted-foreground">
-                                    (No key)
-                                </span>
-                            )}
                         </SelectLabel>
                         {option.models.map((optionModel) => (
                             <SelectItem
                                 key={`${option.id}:${optionModel.id}`}
                                 value={`${option.id}:${optionModel.id}`}
-                                disabled={!hasKey(option.id)}
                             >
                                 <div className="flex items-center justify-between gap-2">
                                     <span>{optionModel.name}</span>

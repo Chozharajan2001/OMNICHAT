@@ -12,7 +12,7 @@ vi.mock("@/stores/chat-store", () => ({
     useChatStore,
 }));
 
-import { ModelSelector, splitModelValue } from "./ModelSelector";
+import { ModelSelector, splitModelValue, visibleProviders } from "./ModelSelector";
 
 const validKey = { providerId: "openai", isValid: true };
 const unverifiedKey = { providerId: "groq", isValid: false };
@@ -71,8 +71,43 @@ describe("ModelSelector loading guard (3.7)", () => {
     });
 });
 
-describe("splitModelValue (3.7)", () => {
-    // `${providerId}:${modelId}` was cut with split(":"), which truncates a model
+describe("visibleProviders (picker hygiene)", () => {
+    it("lists only providers with a confirmed credential", () => {
+        const shown = visibleProviders([
+            { providerId: "openai", isValid: true },
+            { providerId: "groq", isValid: false },
+        ]).map((provider) => provider.id);
+
+        expect(shown).toContain("openai");
+        expect(shown).not.toContain("groq");
+        expect(shown).not.toContain("anthropic");
+    });
+
+    it("shows nothing keyless rather than a wall of disabled rows", () => {
+        expect(visibleProviders([])).toEqual([]);
+        expect(visibleProviders([{ providerId: "groq", isValid: false }])).toEqual([]);
+    });
+});
+
+describe("visibleProviders (picker hygiene)", () => {
+    it("lists only providers with a confirmed credential", () => {
+        const shown = visibleProviders([
+            { providerId: "openai", isValid: true },
+            { providerId: "groq", isValid: false },
+        ]).map((provider) => provider.id);
+
+        expect(shown).toContain("openai");
+        expect(shown).not.toContain("groq");
+        expect(shown).not.toContain("anthropic");
+    });
+
+    it("shows nothing keyless rather than a wall of disabled rows", () => {
+        expect(visibleProviders([])).toEqual([]);
+        expect(visibleProviders([{ providerId: "groq", isValid: false }])).toEqual([]);
+    });
+});
+
+describe("splitModelValue (3.7)", () => {    // `${providerId}:${modelId}` was cut with split(":"), which truncates a model
     // id that contains a separator of its own.
     it("splits at the first separator and keeps the rest intact", () => {
         expect(splitModelValue("openai:gpt-4o")).toEqual(["openai", "gpt-4o"]);
