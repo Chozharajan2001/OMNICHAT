@@ -142,18 +142,69 @@ export function prepareMessages(
 
 /**
  * Generate a title for a conversation based on the first user message.
- * Returns a truncated version of the first message.
+ *
+ * A raw echo makes a bad name: prompts arrive wrapped in instruction
+ * boilerplate ("Reply with exactly: … Nothing else."), so the title would
+ * quote the wrapper instead of the topic. The wrapper is stripped first and
+ * the cut lands on a word boundary, never mid-word.
  */
+const TITLE_MAX_LENGTH = 48;
+
+// Leading scaffolding that describes the answer shape, not the subject.
+const LEADING_INSTRUCTIONS = [
+    /^\s*reply with exactly\s*:?\s*/i,
+    /^\s*reply with only\s*:?\s*/i,
+    /^\s*respond with only\s*:?\s*/i,
+    /^\s*output only\s*:?\s*/i,
+    /^\s*return only\s*:?\s*/i,
+    /^\s*answer with only\s*:?\s*/i,
+];
+
+// Trailing scaffolding with the same problem from the other end. The optional
+// colon covers prompts that end "...nothing else:" before pasted content.
+const TRAILING_INSTRUCTIONS = [
+    /\s*[:.]?\s*nothing else[:.]?\s*$/i,
+    /\s*[:.]?\s*no other text[:.]?\s*$/i,
+    /\s*[:.]?\s*do not explain[:.]?\s*$/i,
+    /\s*[:.]?\s*no explanation[:.]?\s*$/i,
+];
+
 export function generateTitleFromMessage(content: string): string {
-    // Clean up and truncate the message for use as a title
+    // Markdown table chrome carries no topic: pipes become spaces and
+    // separator rows (|---|---|) drop out entirely.
     const cleaned = content
-        .replace(/\n/g, " ")
+        .split("\n")
+        .filter((line) => !/^[\s|:-]+$/.test(line))
+        .join(" ")
+        .replace(/\|/g, " ")
         .replace(/\s+/g, " ")
         .trim();
 
-    if (cleaned.length <= 50) {
-        return cleaned || "New Chat";
+    const unwrapped = TRAILING_INSTRUCTIONS.reduce(
+        (text, pattern) => text.replace(pattern, "").trim(),
+        LEADING_INSTRUCTIONS.reduce(
+            (text, pattern) => text.replace(pattern, "").trim(),
+            cleaned
+        )
+        // A stripped clause often leaves its comma behind ("this table,").
+    ).replace(/,\s*$/, "");
+
+    if (!unwrapped) {
+        return "New Chat";
     }
 
-    return cleaned.slice(0, 47) + "...";
+    return truncateAtWord(unwrapped);
+}
+
+/** Cut to 48 characters at a word boundary, never mid-word. */
+function truncateAtWord(text: string): string {
+    if (text.length <= TITLE_MAX_LENGTH) {
+        return text;
+    }
+
+    const boundary = text.lastIndexOf(" ", TITLE_MAX_LENGTH);
+    if (boundary <= 0) {
+        return `${text.slice(0, TITLE_MAX_LENGTH)}…`;
+    }
+    return `${text.slice(0, boundary)}…`;
 }

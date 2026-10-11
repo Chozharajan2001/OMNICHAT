@@ -175,11 +175,16 @@ describe("generateTitleFromMessage", () => {
         expect(generateTitleFromMessage("Hello")).toBe("Hello");
     });
 
-    it("truncates long messages with ellipsis", () => {
-        const longMessage = "a".repeat(100);
-        const result = generateTitleFromMessage(longMessage);
-        expect(result.length).toBe(50); // 47 + "..."
-        expect(result.endsWith("...")).toBe(true);
+    it("truncates long messages at a word boundary with an ellipsis", () => {
+        const result = generateTitleFromMessage(
+            "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu"
+        );
+        expect(result).toBe("alpha beta gamma delta epsilon zeta eta theta…");
+    });
+
+    it("hard-cuts a single unbroken word", () => {
+        const result = generateTitleFromMessage("a".repeat(100));
+        expect(result).toBe(`${"a".repeat(48)}…`);
     });
 
     it("cleans up whitespace and newlines", () => {
@@ -188,5 +193,33 @@ describe("generateTitleFromMessage", () => {
 
     it("trims leading and trailing whitespace", () => {
         expect(generateTitleFromMessage("  Hello  ")).toBe("Hello");
+    });
+
+    it("strips prompt wrappers and names the topic", () => {
+        expect(generateTitleFromMessage("Reply with exactly: mango tango. Nothing else.")).toBe(
+            "mango tango"
+        );
+    });
+
+    it("strips trailing scaffolding from a real question", () => {
+        expect(generateTitleFromMessage("Summarize this quarter. No other text.")).toBe(
+            "Summarize this quarter"
+        );
+    });
+
+    it("tolerates a colon after the scaffolding", () => {
+        expect(generateTitleFromMessage("Reply with ONLY this table, nothing else:")).toBe(
+            "this table"
+        );
+    });
+
+    it("drops markdown table chrome from the title", () => {
+        expect(
+            generateTitleFromMessage("| Cat | Trait |\n|---|---|\n| Tom | Lazy |")
+        ).toBe("Cat Trait Tom Lazy");
+    });
+
+    it("falls back when only scaffolding remains", () => {
+        expect(generateTitleFromMessage("Reply with exactly:")).toBe("New Chat");
     });
 });
