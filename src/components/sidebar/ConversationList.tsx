@@ -93,7 +93,7 @@ export function ConversationList({
                         link now, not inside it -- interactive content nested in an
                         <a> is invalid HTML. */}
                     <DropdownMenu>
-                        <DropdownMenuTrigger asChild onClick={(e) => e.preventDefault()}>
+                        <DropdownMenuTrigger asChild>
                             <Button
                                 variant="ghost"
                                 size="icon"
