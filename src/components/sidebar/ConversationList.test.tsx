@@ -1,4 +1,4 @@
-import { render, screen, cleanup } from "@testing-library/react";
+import { fireEvent, render, screen, cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ConversationList } from "./ConversationList";
@@ -9,6 +9,7 @@ vi.mock("lucide-react", () => ({
     Download: () => <span data-testid="i-download" />,
     FolderOpen: () => <span data-testid="i-folder" />,
     MessageSquare: () => <span data-testid="i-message" />,
+    Pencil: () => <span data-testid="i-pencil" />,
     Trash2: () => <span data-testid="i-trash" />,
 }));
 
@@ -34,6 +35,7 @@ function renderList() {
             onArchive={vi.fn()}
             onDelete={vi.fn()}
             onExport={vi.fn()}
+            onRename={vi.fn()}
             emptyMessage={NO_CONVERSATIONS_MESSAGE}
         />
     );
@@ -50,6 +52,7 @@ function renderEmpty(emptyMessage: string) {
             onArchive={vi.fn()}
             onDelete={vi.fn()}
             onExport={vi.fn()}
+            onRename={vi.fn()}
             emptyMessage={emptyMessage}
         />
     );
@@ -100,5 +103,31 @@ describe("ConversationList row controls", () => {
         const archive = screen.getByLabelText("Archive “Refund policy draft”");
         expect(archive.className).toContain("opacity-0");
         expect(archive.className).toContain("group-focus-within:opacity-100");
+    });
+
+    it("offers rename from the row menu with the conversation identity", async () => {
+        const onRename = vi.fn();
+        render(
+            <ConversationList
+                conversations={[{ ...conversation }]}
+                activeConversationId={null}
+                isLoading={false}
+                projects={[{ id: "p-1", name: "Support" }]}
+                onAssignProject={vi.fn()}
+                onArchive={vi.fn()}
+                onDelete={vi.fn()}
+                onExport={vi.fn()}
+                onRename={onRename}
+                emptyMessage={NO_CONVERSATIONS_MESSAGE}
+            />
+        );
+
+        // Radix opens on keydown, not on a bare click: a click-only test would
+        // pass against a menu that no keyboard user can ever open.
+        const trigger = screen.getByLabelText("Move “Refund policy draft” to a project");
+        trigger.focus();
+        fireEvent.keyDown(trigger, { key: "Enter", code: "Enter" });
+        fireEvent.click(await screen.findByText("Rename"));
+        expect(onRename).toHaveBeenCalledWith("c-1", "Refund policy draft");
     });
 });

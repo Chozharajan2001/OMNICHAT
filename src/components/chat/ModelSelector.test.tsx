@@ -50,6 +50,25 @@ describe("ModelSelector loading guard (3.7)", () => {
 
         expect(screen.getByRole("combobox", { name: "Chat model" })).toBeDefined();
     });
+
+    it("falls back to the first keyed provider when the stored one has no key", () => {
+        useApiKeys.mockReturnValue({
+            keys: [{ providerId: "nvidia-nim", isValid: true }],
+            loading: false,
+        });
+
+        render(<ModelSelector />);
+
+        expect(setModel).toHaveBeenCalledWith("nvidia-nim", expect.any(String));
+    });
+
+    it("leaves a keyed selection alone", () => {
+        useApiKeys.mockReturnValue({ keys: [validKey], loading: false });
+
+        render(<ModelSelector />);
+
+        expect(setModel).not.toHaveBeenCalled();
+    });
 });
 
 describe("splitModelValue (3.7)", () => {

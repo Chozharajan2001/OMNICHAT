@@ -61,6 +61,82 @@ function SearchScopeNotice({ truncated, hasQuery }: { truncated: boolean; hasQue
     );
 }
 
+// Owns everything about renaming a thread: the draft, the PATCH, and the
+// failure toast. Split out so the sidebar keeps its branch budget.
+function RenameConversationDialog({ conversation, onClose, onRenamed }: {
+    conversation: { id: string; title: string };
+    onClose: () => void;
+    onRenamed: (name: string) => void;
+}) {
+    const { success, error: toastError } = useToast();
+    const [draft, setDraft] = useState(conversation.title);
+
+    const rename = async () => {
+        const name = draft.trim();
+        if (!name) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/conversations/${conversation.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ title: name }),
+            });
+            if (!response.ok) {
+                const payload = (await response.json().catch(() => null)) as {
+                    error?: unknown;
+                } | null;
+                throw new Error(
+                    typeof payload?.error === "string" ? payload.error : "Failed to rename conversation"
+                );
+            }
+
+            onRenamed(name);
+            success("Conversation renamed");
+        } catch (error) {
+            console.error("Failed to rename conversation:", error);
+            toastError("Rename failed", error instanceof Error ? error.message : undefined);
+        }
+    };
+
+    return (
+        <Modal open title="Rename conversation" onClose={onClose} showCloseButton>
+            <div className="space-y-4">
+                <Input
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    placeholder="Conversation title"
+                    maxLength={200}
+                    className="h-11 rounded-xl"
+                    autoFocus
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                            void rename();
+                        }
+                    }}
+                />
+                <div className="flex gap-2">
+                    <Button
+                        variant="ghost"
+                        className="flex-1 rounded-xl"
+                        onClick={onClose}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        className="flex-1 rounded-xl"
+                        onClick={() => void rename()}
+                        disabled={!draft.trim() || draft.trim() === conversation.title}
+                    >
+                        Save
+                    </Button>
+                </div>
+            </div>
+        </Modal>
+    );
+}
+
 /**
  * Only one component may describe an empty list, or the two messages contradict
  * each other: a filtered-out list is not an account with nothing in it. The
@@ -83,6 +159,7 @@ export function ConversationSidebar() {
         isSidebarOpen,
         listVersion,
         setActiveProjectId,
+        setConversationTitle,
         toggleSidebar,
         setSidebarOpen,
     } = useChatStore();
@@ -121,6 +198,7 @@ export function ConversationSidebar() {
     const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
     const [newProjectName, setNewProjectName] = useState("");
     const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<{ type: "conversation" | "project"; id: string } | null>(null);
+    const [renameTarget, setRenameTarget] = useState<{ id: string; title: string } | null>(null);
     const sidebarDefaultState = usePersonalizationStore((state) => state.sidebarDefaultState);
 
     useEffect(() => {
@@ -452,6 +530,7 @@ export function ConversationSidebar() {
                             onArchive={handleArchiveConversation}
                             onDelete={handleDeleteConversation}
                             onExport={handleExportConversation}
+                            onRename={(id, title) => setRenameTarget({ id, title })}
                             onSelect={closeMobileSidebar}
                             emptyMessage={conversationListHint(searchQuery)}
                         />
@@ -542,6 +621,31 @@ export function ConversationSidebar() {
                     </Button>
                 </div>
             </Modal>
+
+            {/* Rename Conversation Dialog */}
+            {renameTarget ? (
+                <RenameConversationDialog
+                    key={renameTarget.id}
+                    conversation={renameTarget}
+                    onClose={() => setRenameTarget(null)}
+                    onRenamed={(name) => {
+                        setRenameTarget(null);
+                        // The open thread shows the store title, not the list
+                        // row: without this the header keeps the old name until
+                        // the next load.
+                        if (conversationId === renameTarget.id) {
+                            setConversationTitle(name);
+                        }
+                        setConversations((prev) =>
+                            prev.map((conversation) =>
+                                conversation.id === renameTarget.id
+                                    ? { ...conversation, title: name }
+                                    : conversation
+                            )
+                        );
+                    }}
+                />
+            ) : null}
         </>
     );
 }

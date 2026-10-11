@@ -5,6 +5,7 @@
 
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { useChatStore } from "@/stores/chat-store";
 import { useApiKeys } from "@/hooks/useApiKeys";
@@ -61,6 +62,28 @@ function ModelPicker() {
     // A key stored but never confirmed counts as absent here: without a working
     // credential the provider's models cannot be used.
     const hasKey = (id: string) => keys.some((key) => key.providerId === id && key.isValid);
+
+    // A persisted selection can outlive its credential (key removed, or
+    // defaults naming a provider never connected): the header would offer an
+    // unusable model and every send would 400. Fall back once to the first
+    // keyed provider's default model; the guard above makes this run only
+    // while the current selection is keyless, so it cannot loop.
+    useEffect(() => {
+        if (keys.some((key) => key.providerId === providerId && key.isValid)) {
+            return;
+        }
+        const fallback = SUPPORTED_PROVIDERS.find((option) =>
+            keys.some((key) => key.providerId === option.id && key.isValid)
+        );
+        if (!fallback) {
+            return;
+        }
+        const fallbackModel =
+            fallback.models.find((model) => model.isDefault) ?? fallback.models[0];
+        if (fallbackModel && (fallback.id !== providerId || fallbackModel.id !== modelId)) {
+            setModel(fallback.id, fallbackModel.id);
+        }
+    }, [keys, providerId, modelId, setModel]);
 
     const handleValueChange = (value: string) => {
         const [nextProviderId, nextModelId] = splitModelValue(value);
