@@ -118,6 +118,10 @@ fn start_server(resource_dir: &Path) -> Result<Child, Box<dyn std::error::Error>
         .env("DATABASE_URL", &db_url)
         .env("NODE_ENV", "production")
         .env("DESKTOP_MODE", "true")
+        // The webview talks to this server over loopback only. Without it,
+        // Auth.js rejects every Host header as untrusted and all sign-ins
+        // land on /login?error=Configuration (observed in the installed app).
+        .env("AUTH_TRUST_HOST", "true")
         .env("AUTH_SECRET", &secrets["AUTH_SECRET"])
         .env("ENCRYPTION_SECRET_KEY", &secrets["ENCRYPTION_SECRET_KEY"])
         .spawn()
@@ -200,7 +204,7 @@ pub fn run() {
             
             Ok(())
         })
-        .on_window_event(|window, event| {
+        .on_window_event(|_window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 // Clean up the server process on window close
                 if let Ok(mut process) = SERVER_PROCESS.lock() {
