@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { FolderPlus, X } from "lucide-react";
+import { dotStyleFor } from "@/components/projects/project-color";
 
 export interface ProjectSummary {
     id: string;
@@ -71,7 +72,7 @@ export function ProjectList({
                         >
                             <span
                                 className="mr-2 h-2.5 w-2.5 rounded-full"
-                                style={{ backgroundColor: project.color || "var(--primary)" }}
+                                style={dotStyleFor(project.color)}
                             />
                             <span className="truncate">{project.name}</span>
                             <span className="ml-2 text-xs text-muted-foreground">

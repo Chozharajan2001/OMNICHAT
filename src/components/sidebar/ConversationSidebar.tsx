@@ -12,6 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { ConversationList } from "./ConversationList";
 import { ProjectList, type ProjectSummary } from "./ProjectList";
+import { DEFAULT_PROJECT_COLOR, ProjectColorField } from "@/components/projects/project-color";
 import {
     Command,
     PanelLeft,
@@ -197,6 +198,7 @@ export function ConversationSidebar() {
         }));
     const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
     const [newProjectName, setNewProjectName] = useState("");
+    const [newProjectColor, setNewProjectColor] = useState(DEFAULT_PROJECT_COLOR);
     const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<{ type: "conversation" | "project"; id: string } | null>(null);
     const [renameTarget, setRenameTarget] = useState<{ id: string; title: string } | null>(null);
     const sidebarDefaultState = usePersonalizationStore((state) => state.sidebarDefaultState);
@@ -319,6 +321,7 @@ export function ConversationSidebar() {
 
     const handleCreateProject = () => {
         setNewProjectName("");
+        setNewProjectColor(DEFAULT_PROJECT_COLOR);
         setShowNewProjectDialog(true);
     };
 
@@ -332,7 +335,7 @@ export function ConversationSidebar() {
             const response = await fetch("/api/projects", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name }),
+                body: JSON.stringify({ name, color: newProjectColor }),
             });
 
             const data = await response.json();
@@ -343,6 +346,7 @@ export function ConversationSidebar() {
             await fetchProjects();
             setShowNewProjectDialog(false);
             setNewProjectName("");
+            setNewProjectColor(DEFAULT_PROJECT_COLOR);
             success("Project created");
         } catch (error) {
             console.error("Failed to create project:", error);
@@ -580,6 +584,7 @@ export function ConversationSidebar() {
                         }}
                         autoFocus
                     />
+                    <ProjectColorField value={newProjectColor} onChange={setNewProjectColor} />
                     <div className="flex gap-2">
                         <Button
                             variant="ghost"

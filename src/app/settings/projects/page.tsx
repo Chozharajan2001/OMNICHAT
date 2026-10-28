@@ -8,6 +8,7 @@ import { Modal } from "@/components/ui/modal";
 import { FolderKanban, Pencil, Plus, Trash2 } from "lucide-react";
 import { useToast } from "@/stores/toast-store";
 import { useJsonResource } from "@/hooks/useJsonResource";
+import { DEFAULT_PROJECT_COLOR, ProjectColorField, dotStyleFor } from "@/components/projects/project-color";
 
 interface ProjectItem {
     id: string;
@@ -20,6 +21,13 @@ interface ProjectItem {
 
 function projectDeleteCopy(project: ProjectItem | null): string {
     return `Delete ${project?.name ?? "this project"}? Its conversations stay in the workspace and become unassigned.`;
+}
+
+// Create and rename agree on what "unchanged" means so Save never fires a
+// no-op write, and the color half of the comparison cannot be skipped just
+// because the field is new.
+function isRenameUnchanged(draftName: string, currentName: string, draftColor: string, currentColor: string | null | undefined): boolean {
+    return draftName.trim() === currentName && draftColor === (currentColor ?? DEFAULT_PROJECT_COLOR);
 }
 
 // Owns everything about renaming from a row: the button, the open state,
@@ -66,6 +74,7 @@ function RenameProjectDialog({ project, onClose, onRenamed }: {
 }) {
     const { success, error: toastError } = useToast();
     const [renameName, setRenameName] = useState(project.name);
+    const [renameColor, setRenameColor] = useState(project.color ?? DEFAULT_PROJECT_COLOR);
 
     const renameProject = async () => {
         const name = renameName.trim();
@@ -75,7 +84,7 @@ function RenameProjectDialog({ project, onClose, onRenamed }: {
             const response = await fetch(`/api/projects/${project.id}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name }),
+                body: JSON.stringify({ name, color: renameColor }),
             });
 
             const payload = await response.json();
@@ -104,6 +113,7 @@ function RenameProjectDialog({ project, onClose, onRenamed }: {
                         if (event.key === "Enter") void renameProject();
                     }}
                 />
+                <ProjectColorField value={renameColor} onChange={setRenameColor} />
                 <div className="flex gap-2">
                     <Button variant="ghost" className="flex-1 rounded-xl" onClick={onClose}>
                         Cancel
@@ -111,7 +121,7 @@ function RenameProjectDialog({ project, onClose, onRenamed }: {
                     <Button
                         className="flex-1 rounded-xl"
                         onClick={renameProject}
-                        disabled={!renameName.trim() || renameName.trim() === project.name}
+                        disabled={!renameName.trim() || isRenameUnchanged(renameName, project.name, renameColor, project.color)}
                     >
                         Save
                     </Button>
@@ -128,6 +138,7 @@ export default function ProjectsSettingsPage() {
     const projects = data?.projects ?? [];
     const [showCreate, setShowCreate] = useState(false);
     const [newName, setNewName] = useState("");
+    const [newColor, setNewColor] = useState(DEFAULT_PROJECT_COLOR);
     const [deleteTarget, setDeleteTarget] = useState<ProjectItem | null>(null);
 
     if (loadError) {
@@ -145,7 +156,7 @@ export default function ProjectsSettingsPage() {
             const response = await fetch("/api/projects", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name }),
+                body: JSON.stringify({ name, color: newColor }),
             });
 
             const payload = await response.json();
@@ -155,6 +166,7 @@ export default function ProjectsSettingsPage() {
 
             await fetchProjects();
             setNewName("");
+            setNewColor(DEFAULT_PROJECT_COLOR);
             setShowCreate(false);
             success("Project created");
         } catch (error) {
@@ -221,7 +233,7 @@ export default function ProjectsSettingsPage() {
                                     <div className="flex items-center gap-2 font-medium">
                                         <span
                                             className="h-2.5 w-2.5 rounded-full"
-                                            style={{ backgroundColor: project.color || "var(--primary)" }}
+                                            style={dotStyleFor(project.color)}
                                         />
                                         <span className="truncate">{project.name}</span>
                                     </div>
@@ -264,6 +276,7 @@ export default function ProjectsSettingsPage() {
                             if (event.key === "Enter") void createProject();
                         }}
                     />
+                    <ProjectColorField value={newColor} onChange={setNewColor} />
                     <div className="flex gap-2">
                         <Button variant="ghost" className="flex-1 rounded-xl" onClick={() => setShowCreate(false)}>
                             Cancel
