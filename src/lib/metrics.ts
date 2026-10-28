@@ -139,9 +139,24 @@ class MetricsCollector {
 }
 
 /**
- * Global metrics instance
+ * Global metrics instance.
+ *
+ * Anchored on the Node.js global scope, deliberately, not on module scope:
+ * the standalone production bundle evaluates shared modules once per server
+ * route, so a module-scoped singleton silently shards into one registry per
+ * route and the scrape endpoint can never see another route's counters
+ * (verified live: a booted container answered 401s on /api/providers and
+ * /api/conversations yet scraped an empty registry, while the metrics route
+ * showed only its own app_info seed, not the chat series the chat route had
+ * just recorded). One process, one registry.
  */
-export const metrics = new MetricsCollector();
+const globalForMetrics = globalThis as unknown as { __omnichatMetrics?: MetricsCollector };
+
+if (!globalForMetrics.__omnichatMetrics) {
+    globalForMetrics.__omnichatMetrics = new MetricsCollector();
+}
+
+export const metrics: MetricsCollector = globalForMetrics.__omnichatMetrics;
 
 /**
  * Build identity, recorded once at import so even an idle instance scrapes
