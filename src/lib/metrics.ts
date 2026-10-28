@@ -2,6 +2,8 @@
 // Application metrics collection for monitoring and alerting
 // For production, integrate with OpenTelemetry, Prometheus, or similar
 
+import { APP_VERSION } from "@/lib/version";
+
 interface MetricValue {
   value: number;
   timestamp: number;
@@ -140,6 +142,17 @@ class MetricsCollector {
  * Global metrics instance
  */
 export const metrics = new MetricsCollector();
+
+/**
+ * Build identity, recorded once at import so even an idle instance scrapes
+ * something truthful: which build is answering, never traffic that has not
+ * happened yet. Exported for tests; production calls it exactly once, below.
+ */
+export function recordBuildInfo(): void {
+    metrics.setGauge("app_info", 1, { version: APP_VERSION });
+}
+
+recordBuildInfo();
 
 /**
  * Pre-defined metric names for consistency

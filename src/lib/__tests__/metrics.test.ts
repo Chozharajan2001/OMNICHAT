@@ -1,6 +1,6 @@
 // src/lib/__tests__/metrics.test.ts
 import { describe, it, expect, beforeEach } from "vitest";
-import { metrics, MetricNames, recordHttpRequest, recordChatMessage, recordRateLimitRejection, recordAuthAttempt } from "../metrics";
+import { metrics, MetricNames, recordHttpRequest, recordChatMessage, recordRateLimitRejection, recordAuthAttempt, recordBuildInfo } from "../metrics";
 
 describe("MetricsCollector", () => {
   beforeEach(() => {
@@ -107,6 +107,15 @@ describe("MetricsCollector", () => {
 
     it("returns empty string when no metrics", () => {
       expect(metrics.getMetrics()).toBe("");
+    });
+
+    it("seeds build identity without faking traffic", () => {
+      recordBuildInfo();
+      const output = metrics.getMetrics();
+
+      expect(output).toContain("# TYPE app_info gauge");
+      expect(output).toMatch(/app_info\{version="[^"]+"\} 1/);
+      expect(output).not.toContain("http_requests_total");
     });
   });
 

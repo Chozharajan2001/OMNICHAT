@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { metrics, recordBuildInfo } from "@/lib/metrics";
 import { GET } from "./route";
 
 // Access control contract for the metrics surface (audit M-metrics):
@@ -37,6 +38,19 @@ describe("GET /api/metrics access control", () => {
         expect(response.status).toBe(200);
         expect(response.headers.get("Content-Type")).toContain("text/plain");
         expect(response.headers.get("Cache-Control")).toBe("no-store");
+    });
+
+    it("includes the seeded build identity on an otherwise idle registry", async () => {
+        vi.stubEnv("NODE_ENV", "test");
+        // reset() wipes the import-time seed, so restore it: this is the state a
+        // freshly booted instance is in.
+        metrics.reset();
+        recordBuildInfo();
+        const response = await GET(request());
+        const body = await response.text();
+
+        expect(response.status).toBe(200);
+        expect(body).toMatch(/# TYPE app_info gauge\napp_info\{version="[^"]+"\} 1/);
     });
 
     it("accepts the exact bearer token", async () => {
