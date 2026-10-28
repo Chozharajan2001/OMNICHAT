@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useJsonResource } from "@/hooks/useJsonResource";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -49,15 +49,16 @@ interface ConversationPage {
     nextCursor?: { id: string } | null;
 }
 
-// Its own component because ConversationSidebar has spent its branch budget.
-function SearchScopeNotice({ truncated, hasQuery }: { truncated: boolean; hasQuery: boolean }) {
-    // During a search the server is the owner: it filters all titles and
-    // reports no further pages, so no scope caveat applies. The list's
-    // emptyMessage carries the no-match case.
-    if (!truncated || hasQuery) return null;
+// One caption for every list state. The unconditional branch ("most recent
+// chats") covers the unfiltered list; the query branch covers search, where the
+// server matched titles across all chats and only the first page is shown.
+// Kept out of the component so its own complexity budget is untouched.
+export function scopeCaption(hasNextPage: boolean, rawQuery: string): ReactNode | null {
+    if (!hasNextPage) return null;
+    const scope = rawQuery.trim() === "" ? "most recent chats" : "title matches";
     return (
         <p className="px-1 pt-2 text-xs leading-5 text-muted-foreground">
-            Showing the {SIDEBAR_CONVERSATION_LIMIT} most recent chats.
+            Showing the first {SIDEBAR_CONVERSATION_LIMIT} {scope}.
         </p>
     );
 }
@@ -511,10 +512,7 @@ export function ConversationSidebar() {
                         />
                     </div>
 
-                    <SearchScopeNotice
-                        truncated={!!conversationData?.nextCursor}
-                        hasQuery={searchQuery.trim() !== ""}
-                    />
+                    {scopeCaption(!!conversationData?.nextCursor, searchQuery)}
                 </div>
 
                 <Separator />
