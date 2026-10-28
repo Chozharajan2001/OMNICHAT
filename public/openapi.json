@@ -137,7 +137,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Metrics in Prometheus text format. The registry always carries the app_info build identity; route, auth-attempt and rate-limit series appear once real requests flow through routeTimer and the auth/limiter helpers (measured: login and 401/403 traffic produce http_requests_total, http_request_duration_seconds, http_errors_total and auth_attempts_total on a fresh keyless boot). Only chat_* counters still need a real provider key, via a completed chat turn.",
+            "description": "Metrics in Prometheus text format. The registry always carries the app_info build identity; route, auth-attempt and rate-limit series appear once real requests flow through routeTimer and the auth/limiter helpers (measured: login and authenticated 200s produce http_requests_total, http_request_duration_seconds, http_errors_total and auth_attempts_total on a fresh keyless boot). Only chat_* counters still need a real provider key, via a completed chat turn.",
             "headers": {
               "Cache-Control": {
                 "schema": {

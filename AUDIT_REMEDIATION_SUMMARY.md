@@ -1455,3 +1455,49 @@ record are the deliverables.
 *Branch: release/host-readiness*
 *CSRF 403 observed live; mutation-only comparison and the NEXTAUTH_URL/APP_ORIGIN split recorded in README*
 *Plan status: Phases 0-4 complete except item 6 (tag/push/PR, an owner order); Phase 5 is post-host by design*
+
+---
+
+## Phase 17: Metrics scrape proven non-empty keyless; a wrong fix reverted (October 28, 2026)
+
+**The finding.** `GET /api/metrics` on a fresh boot answered 200 with only
+`app_info` after anonymous traffic. A first theory — per-route module sharding
+in the standalone bundle — produced commit `58e9d7a` (globalThis anchor). It
+was wrong and has been reverted in full (`3d9c842`): the scrape was empty
+because **anonymous requests never reach a route handler**. `src/proxy.ts`
+returns 401 for unauthenticated `/api/*` before any handler — and its
+`routeTimer` — runs, so nothing is recorded to read. The fix that actually
+matters was a signed-in request: after credentials login plus one `GET
+/api/providers` and one `GET /api/conversations`, the same scrape returned
+`app_info`, `auth_attempts_total`, `http_requests_total` (200s), duration
+histograms, and `http_errors_total` for a `PATCH /api/preferences` that hit the
+403 Origin guard. One registry, one process, working as designed. Lesson kept:
+an instrumented rejection that never fires means the probe never reached the
+instrument, not that the instrument is sharded.
+
+**Why the unit tests never caught it.** `observe.test.ts` calls the route
+handler directly, so `done()` always runs there. The gap between test and
+production was the proxy short-circuit, which no test exercises. Kept from the
+reverted commit: the two unit tests that pin legitimate behavior
+(single shared instance, a recorded production route).
+
+**openapi.json corrected twice in this pass.** The description previously
+claimed idle scrapes return an empty body and that only `chat_*` series are
+ever recorded. Measured reality: `app_info` is always present, and
+`http_requests_total`/`http_request_duration_seconds`/`http_errors_total`/`auth_attempts_total`
+appear after real (authenticated where required) traffic. Only `chat_*`
+counters still need a provider key. The example body now mirrors a measured
+keyless scrape.
+
+**Task 32 closed with measured numbers:** fresh sqlite boot → `{"status":
+"healthy","database":"up","encryption":"up"}`; login 200; provider list 200
+signed in; final scrape shows `app_info` + 5 HTTP rows. Stack torn down
+(`down -v`), volume/account/secrets removed, scratch env file deleted.
+Capacitor check: `git status` clean apart from the two committed files.
+
+---
+
+*Updated October 28, 2026 (Phase 17)*
+*Branch: release/host-readiness*
+*Metrics: non-empty scrape proven live; wrong globalThis theory proposed, measured against, and reverted*
+*Plan status: Phases 0-4 complete except item 6 (tag/push/PR, an owner order); Phase 5 is post-host by design; provider-key live paths still open*
