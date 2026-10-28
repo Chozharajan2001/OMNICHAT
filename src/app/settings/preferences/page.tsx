@@ -335,8 +335,12 @@ function PreferencesForm({ initialPreferences, updatePreferences }: {
                             <div>
                                 <div className="mb-3 flex items-center gap-2 text-sm font-medium">
                                     <Languages className="h-4 w-4 text-primary" />
-                                    Language
+                                    Document language
                                 </div>
+                                <p className="mb-3 text-xs leading-5 text-muted-foreground">
+                                    Sets the document language for assistive technology and
+                                    hyphenation. Interface text stays English.
+                                </p>
                                 <div className="grid gap-2 rounded-[1.25rem] border border-border/70 bg-background/40 p-2">
                                     {LANGUAGE_OPTIONS.map((option) => (
                                         <button
@@ -523,7 +527,7 @@ function PreferencesForm({ initialPreferences, updatePreferences }: {
                         <div className="mb-4 text-lg font-semibold">Current profile</div>
                         <div className="space-y-3 text-sm">
                             <div className="flex items-center justify-between rounded-2xl bg-background/30 px-4 py-3">
-                                <span className="text-muted-foreground">Language</span>
+                                <span className="text-muted-foreground">Document language</span>
                                 <span className="font-medium">
                                     {LANGUAGE_OPTIONS.find((option) => option.value === language)?.label || language}
                                 </span>

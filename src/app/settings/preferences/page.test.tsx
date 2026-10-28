@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 // A brand-new account gets { preferences: null } from GET /api/preferences. That
@@ -30,6 +30,7 @@ vi.mock("next/navigation", () => ({
 
 import PreferencesPage from "./page";
 import { getProvider } from "@/lib/mastra/providers";
+import { usePersonalizationStore } from "@/stores/personalization-store";
 
 // Read from the real registry: pinning an id here would make the case pass for
 // the wrong reason the next time a default model changes.
@@ -117,5 +118,24 @@ describe("preferences page with a saved row", () => {
         render(<PreferencesPage />);
 
         expect(screen.queryByText(/Unsaved changes/i)).toBeNull();
+    });
+});
+
+describe("preferences page language control", () => {
+    afterEach(() => {
+        cleanup();
+        usePersonalizationStore.setState({ language: "en-US" });
+    });
+
+    it("says document language and stores the assistive-tech choice, not a translation", () => {
+        render(<PreferencesPage />);
+
+        // Both the control heading and the Current profile row use the same
+        // honest wording.
+        expect(screen.getAllByText("Document language")).toHaveLength(2);
+        expect(screen.getByText(/Interface text stays English/)).toBeTruthy();
+
+        fireEvent.click(screen.getByRole("button", { name: /Tamil \(India\)/ }));
+        expect(usePersonalizationStore.getState().language).toBe("ta-IN");
     });
 });
