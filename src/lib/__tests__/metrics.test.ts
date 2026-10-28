@@ -4,9 +4,6 @@ import { metrics, MetricNames, recordHttpRequest, recordChatMessage, recordRateL
 
 describe("global registry sharing", () => {
     it("returns the same instance across separate imports of the module", async () => {
-        // The standalone production bundle evaluates shared modules once per
-        // route chunk; anchoring on globalThis is what keeps per-route
-        // recordings visible to the scrape endpoint.
         const fresh = await import("../metrics");
         expect(fresh.metrics).toBe(metrics);
     });
