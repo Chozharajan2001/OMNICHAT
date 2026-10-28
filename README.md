@@ -190,6 +190,10 @@ Schema provisioning is a one-shot `migrate` compose service (the Dockerfile's
 `migrate` target runs `prisma db push`); the app container only starts after
 it completes successfully. There is no runtime entrypoint.
 
+`pnpm build` is green on Windows too: the `prebuild` step creates empty
+stand-ins for the platform-native libsql bindings pnpm skips, so the
+standalone tracer stops dying on the absent folders.
+
 **First account on a fresh deployment:** automatic account creation on sign-in is
 deliberately limited to development and desktop mode (`canAutoCreateAccount()` in
 `src/lib/auth/email-policy.ts`), and with `EMAIL_VERIFICATION_REQUIRED` unset the
