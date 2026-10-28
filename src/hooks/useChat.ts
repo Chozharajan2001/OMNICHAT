@@ -221,6 +221,7 @@ export function useChat(options: UseOmniChatOptions = {}) {
 
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
+    const [isHistoryLoading, setIsHistoryLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const abortControllerRef = useRef<AbortController | null>(null);
     const currentAssistantMsgIdRef = useRef<string | null>(null);
@@ -411,6 +412,7 @@ export function useChat(options: UseOmniChatOptions = {}) {
     // component has to synchronize the two (and a fresh canvas clears both).
     const loadConversation = useCallback(
         async (id: string): Promise<void> => {
+            setIsHistoryLoading(true);
             try {
                 const response = await fetch(
                     `/api/conversations/${id}?limit=${DEFAULT_MESSAGE_PAGE_SIZE}`
@@ -430,6 +432,8 @@ export function useChat(options: UseOmniChatOptions = {}) {
                 console.error("Failed to load conversation:", err);
                 setError("Failed to load conversation");
                 onError?.(err as Error);
+            } finally {
+                setIsHistoryLoading(false);
             }
         },
         [setMessages, setConversationId, setConversationTitle, onError]
@@ -448,6 +452,7 @@ export function useChat(options: UseOmniChatOptions = {}) {
         messages,
         input,
         isLoading,
+        isHistoryLoading,
         error,
         conversationId,
 

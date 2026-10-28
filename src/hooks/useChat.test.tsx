@@ -95,3 +95,45 @@ describe("useChat stale-conversation recovery", () => {
         expect(result.current.error).toBe("boom");
     });
 });
+
+describe("useChat loadConversation history flag", () => {
+    function deferredFetch() {
+        let resolve!: (value: unknown) => void;
+        const promise = new Promise((res) => { resolve = res; });
+        global.fetch = vi.fn(() => promise) as unknown as typeof fetch;
+        return { resolve };
+    }
+
+    it("is true while the window loads and false once it lands", async () => {
+        const gate = deferredFetch();
+        const { result } = renderHook(() => useChat({}));
+
+        let pending: Promise<void> | undefined;
+        act(() => {
+            pending = result.current.loadConversation("c-1");
+        });
+        expect(result.current.isHistoryLoading).toBe(true);
+
+        await act(async () => {
+            gate.resolve({
+                ok: true,
+                json: async () => ({ messages: [], title: "T" }),
+                headers: new Headers(),
+            });
+            await pending;
+        });
+        expect(result.current.isHistoryLoading).toBe(false);
+    });
+
+    it("clears the flag and surfaces the failure when the load fails", async () => {
+        failedFetch(500, "boom");
+        const { result } = renderHook(() => useChat({}));
+
+        await act(async () => {
+            await result.current.loadConversation("c-1");
+        });
+
+        expect(result.current.isHistoryLoading).toBe(false);
+        expect(result.current.error).toBe("Failed to load conversation");
+    });
+});

@@ -50,6 +50,7 @@ export function ChatContainer({ conversationId, className }: ChatContainerProps)
         messages,
         input,
         isLoading,
+        isHistoryLoading,
         error,
         handleInputChange,
         handleSubmit,
@@ -131,6 +132,7 @@ export function ChatContainer({ conversationId, className }: ChatContainerProps)
                 <MessageList
                     messages={messages}
                     isLoading={isLoading}
+                    isInitialLoading={isHistoryLoading}
                     showTokenCount={preferences?.showTokenCount ?? false}
                     onLoadOlder={loadOlderMessages}
                 />
