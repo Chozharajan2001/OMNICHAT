@@ -5,10 +5,10 @@
 
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useChatStore } from "@/stores/chat-store";
-import { useApiKeys } from "@/hooks/useApiKeys";
+import { useProviders } from "@/hooks/useProviders";
 import { SUPPORTED_PROVIDERS } from "@/lib/mastra/providers";
 import { getProvider, getModel } from "@/lib/mastra/providers";
 import { Button } from "@/components/ui/button";
@@ -65,9 +65,20 @@ function PlaceholderButton({ kind }: { kind: "loading" | "connect" }) {
 
 function ModelPicker() {
     const { modelId, providerId, setModel } = useChatStore();
-    const { keys } = useApiKeys();
+    const { providers } = useProviders();
     const provider = getProvider(providerId);
     const model = getModel(providerId, modelId);
+
+    // The picker reasons about keyed providers, not rows: useProviders is the
+    // one place that answers "confirmed credential", and the memo keeps the
+    // fallback effect from re-running on every render.
+    const keys = useMemo(
+        () =>
+            providers
+                .filter((option) => option.hasKey)
+                .map((option) => ({ providerId: option.id, isValid: true as const })),
+        [providers]
+    );
 
     // A key stored but never confirmed counts as absent here: without a working
     // credential the provider's models cannot be used.
@@ -157,9 +168,9 @@ export function ModelSelector() {
     // `loading` was ignored, so every mount answered "no keys" while the vault
     // request was still in flight and the Connect prompt flashed before the
     // real selector replaced it.
-    const { keys, loading } = useApiKeys();
+    const { providers, loading } = useProviders();
     if (loading) return <PlaceholderButton kind="loading" />;
-    if (!keys.some((key) => key.isValid)) return <PlaceholderButton kind="connect" />;
+    if (!providers.some((provider) => provider.hasKey)) return <PlaceholderButton kind="connect" />;
 
     return <ModelPicker />;
 }

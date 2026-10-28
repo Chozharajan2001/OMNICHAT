@@ -1,21 +1,21 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { useApiKeys, useChatStore, setModel } = vi.hoisted(() => ({
-    useApiKeys: vi.fn(),
+const { useProviders, useChatStore, setModel } = vi.hoisted(() => ({
+    useProviders: vi.fn(),
     useChatStore: vi.fn(),
     setModel: vi.fn(),
 }));
 
-vi.mock("@/hooks/useApiKeys", () => ({ useApiKeys }));
+vi.mock("@/hooks/useProviders", () => ({ useProviders }));
 vi.mock("@/stores/chat-store", () => ({
     useChatStore,
 }));
 
 import { ModelSelector, splitModelValue, visibleProviders } from "./ModelSelector";
 
-const validKey = { providerId: "openai", isValid: true };
-const unverifiedKey = { providerId: "groq", isValid: false };
+const openaiKeyed = { id: "openai", hasKey: true };
+const groqUnkeyed = { id: "groq", hasKey: false };
 
 beforeEach(() => {
     vi.clearAllMocks();
@@ -26,7 +26,7 @@ afterEach(cleanup);
 
 describe("ModelSelector loading guard (3.7)", () => {
     it("does not offer to connect while the vault is still being read", () => {
-        useApiKeys.mockReturnValue({ keys: [], loading: true });
+        useProviders.mockReturnValue({ providers: [], loading: true });
 
         render(<ModelSelector />);
 
@@ -36,7 +36,7 @@ describe("ModelSelector loading guard (3.7)", () => {
     });
 
     it("offers to connect only once the answer is known and there is no usable key", () => {
-        useApiKeys.mockReturnValue({ keys: [unverifiedKey], loading: false });
+        useProviders.mockReturnValue({ providers: [groqUnkeyed], loading: false });
 
         render(<ModelSelector />);
 
@@ -44,7 +44,7 @@ describe("ModelSelector loading guard (3.7)", () => {
     });
 
     it("renders the picker when a verified key exists", () => {
-        useApiKeys.mockReturnValue({ keys: [validKey], loading: false });
+        useProviders.mockReturnValue({ providers: [openaiKeyed], loading: false });
 
         render(<ModelSelector />);
 
@@ -52,8 +52,8 @@ describe("ModelSelector loading guard (3.7)", () => {
     });
 
     it("falls back to the first keyed provider when the stored one has no key", () => {
-        useApiKeys.mockReturnValue({
-            keys: [{ providerId: "nvidia-nim", isValid: true }],
+        useProviders.mockReturnValue({
+            providers: [{ id: "nvidia-nim", hasKey: true }],
             loading: false,
         });
 
@@ -63,7 +63,7 @@ describe("ModelSelector loading guard (3.7)", () => {
     });
 
     it("leaves a keyed selection alone", () => {
-        useApiKeys.mockReturnValue({ keys: [validKey], loading: false });
+        useProviders.mockReturnValue({ providers: [openaiKeyed], loading: false });
 
         render(<ModelSelector />);
 

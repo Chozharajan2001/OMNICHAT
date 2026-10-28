@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useApiKeys } from "@/hooks/useApiKeys";
+import { useProviders } from "@/hooks/useProviders";
 import { SUPPORTED_PROVIDERS, type ProviderDefinition } from "@/lib/mastra/providers";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -211,7 +212,11 @@ function ProviderCard(props: CardProps) {
 
 export default function ProvidersPage() {
     const { keys, loading, error, addKey, removeKey, validateKey } = useApiKeys();
+    // Badges and the header count come from the server's per-provider view, not
+    // from counting vault rows: a merely stored key is not a connection.
+    const { providers, refresh: refreshProviders } = useProviders();
     const { success, error: toastError } = useToast();
+    const connectedCount = providers.filter((provider) => provider.hasKey).length;
 
     const keyMap = new Map<string, (typeof keys)[0]>();
     keys.forEach((key) => keyMap.set(key.providerId, key));
@@ -235,6 +240,7 @@ export default function ProvidersPage() {
 
         try {
             await addKey(provider.id, key);
+            await refreshProviders();
             setInputValues((prev) => ({ ...prev, [provider.id]: "" }));
             success("API key saved", provider.name);
         } catch (err: unknown) {
@@ -251,6 +257,7 @@ export default function ProvidersPage() {
 
         try {
             const valid = await validateKey(provider.id);
+            await refreshProviders();
             // Both outcomes are reported: a refused key is information the user
             // has no other way to get, since the credential never leaves the vault.
             if (valid) {
@@ -272,6 +279,7 @@ export default function ProvidersPage() {
         if (!deleteTarget) return;
         try {
             await removeKey(deleteTarget.id);
+            await refreshProviders();
             success("API key removed");
         } catch (err: unknown) {
             console.error(err);
@@ -291,7 +299,7 @@ export default function ProvidersPage() {
                     </p>
                 </div>
                 <div className="rounded-full border border-border/70 bg-background/30 px-4 py-2 text-sm text-muted-foreground">
-                    {keys.length} provider{keys.length === 1 ? "" : "s"} connected
+                    {connectedCount} provider{connectedCount === 1 ? "" : "s"} connected
                 </div>
             </div>
 
@@ -318,7 +326,7 @@ export default function ProvidersPage() {
                 </div>
             ) : null}
 
-            {!loading && keys.length === 0 ? (
+            {!loading && connectedCount === 0 ? (
                 <section className="rounded-[1.75rem] border border-primary/25 bg-primary/8 p-6">
                     <div className="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">
                         <Sparkles className="h-4 w-4 text-primary" />
