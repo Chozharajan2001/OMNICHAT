@@ -2,6 +2,25 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { metrics, MetricNames, recordHttpRequest, recordChatMessage, recordRateLimitRejection, recordAuthAttempt, recordBuildInfo } from "../metrics";
 
+describe("global registry sharing", () => {
+    it("returns the same instance across separate imports of the module", async () => {
+        // The standalone production bundle evaluates shared modules once per
+        // route chunk; anchoring on globalThis is what keeps per-route
+        // recordings visible to the scrape endpoint.
+        const fresh = await import("../metrics");
+        expect(fresh.metrics).toBe(metrics);
+    });
+
+    it("records production route traffic into the shared registry", () => {
+        metrics.reset();
+        recordHttpRequest("GET", "/api/providers", 401, 5);
+
+        expect(metrics.getMetrics()).toContain(
+            'http_requests_total{method="GET",path="/api/providers",status="401"} 1'
+        );
+    });
+});
+
 describe("MetricsCollector", () => {
   beforeEach(() => {
     metrics.reset();
