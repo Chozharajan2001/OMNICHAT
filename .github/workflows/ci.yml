@@ -68,8 +68,15 @@ jobs:
       - run: pnpm test
 
   build:
-    name: Production build
-    runs-on: ubuntu-latest
+    # Both operating systems: the standalone tracer resolves native bindings
+    # per platform, and the Windows leg is where a skipped @libsql package
+    # first shows up. `prebuild` stubs them (scripts/fixup-native-stubs.mjs);
+    # this matrix is what keeps that claim honest instead of documented.
+    name: Production build (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     needs: test-and-typecheck
     env:
       DATABASE_URL: file:./test.db
