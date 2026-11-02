@@ -107,10 +107,12 @@ jobs:
       - name: Build the one-shot migrate image (compose provisioning path)
         run: docker build --target migrate -t omnichat-migrate:ci .
       - name: Validate both compose stacks (migrate wiring included)
+        env:
+          POSTGRES_USER: u
+          POSTGRES_PASSWORD: p
+          AUTH_SECRET: a-very-long-ci-only-secret
+          ENCRYPTION_SECRET_KEY: ci-encryption-secret-not-for-production
         run: |
-          POSTGRES_USER=u POSTGRES_PASSWORD=p \
-          AUTH_SECRET=a-very-long-ci-only-secret \
-          ENCRYPTION_SECRET_KEY=ci-encryption-secret-not-for-production \
           docker compose -f docker-compose.yml config --quiet
           docker compose -f docker-compose.sqlite.yml config --quiet
 
