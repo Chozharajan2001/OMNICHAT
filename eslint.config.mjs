@@ -12,6 +12,14 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    "src/generated/**",
+    "src-tauri/target/**",
+    // Staged desktop bundle inputs (server.js, runtime, node_modules) are
+    // copied build artifacts, never source: linting them reports thousands of
+    // minified-chunk warnings and errors from third-party output.
+    "src-tauri/staging/**",
+    "coverage/**",
+    ".qoder/**",
   ]),
 ]);
 

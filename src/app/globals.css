@@ -5,26 +5,43 @@
   --foreground: #151515;
   --card: rgba(255, 255, 255, 0.82);
   --card-foreground: #151515;
-  --popover: rgba(255, 255, 255, 0.95);
+  /* Floating menus must be opaque: translucency here lets page text show
+     through the option list. Panels and cards keep their glass surfaces;
+     only popover (used solely by the select/dropdown primitives) is solid. */
+  --popover: #fffdf8;
   --popover-foreground: #151515;
-  --primary: #e56a1f;
+  --primary: #b34a12;
   --primary-foreground: #fff7ec;
+  --primary-hover: #a84810;
   --secondary: #d9cfbc;
   --secondary-foreground: #2a241d;
   --muted: rgba(28, 24, 20, 0.08);
   --muted-foreground: #6f6558;
-  --accent: rgba(229, 106, 31, 0.12);
+  --accent: rgba(179, 74, 18, 0.12);
   --accent-foreground: #322015;
   --destructive: #c44125;
   --destructive-foreground: #fff7f4;
+  --destructive-hover: #b03a20;
+  --success: #0e6b4a;
+  --success-foreground: #f4fbf7;
   --border: rgba(28, 24, 20, 0.12);
   --input: rgba(28, 24, 20, 0.08);
-  --ring: rgba(229, 106, 31, 0.45);
+  --ring: rgba(179, 74, 18, 0.45);
   --radius: 1.25rem;
   --sidebar: rgba(255, 250, 242, 0.72);
   --sidebar-foreground: #241d16;
   --sidebar-border: rgba(28, 24, 20, 0.08);
+  /* The mobile drawer is translucent by design (glass), so over a scrim it
+     must not show the dimmed page through it: the drawer gets a solid surface
+     token, the desktop sidebar keeps its glass. */
+  --sidebar-solid: #fffaf2;
+  /* Modal / drawer scrims are warm-tinted, never neutral black: 45% black over
+     the cream light theme reads as dirty grey and muddies everything behind. */
+  --scrim: rgba(41, 32, 24, 0.34);
   --panel: rgba(255, 255, 255, 0.48);
+  /* Brand-tinted elevation. Shadows were hardcoded to the dark theme's violet
+     and therefore glowed violet under the light theme too. */
+  --shadow-primary: rgba(179, 74, 18, 0.22);
 }
 
 [data-theme="dark"] {
@@ -32,25 +49,33 @@
   --foreground: #f6f2ea;
   --card: rgba(29, 30, 39, 0.78);
   --card-foreground: #f6f2ea;
-  --popover: rgba(23, 24, 31, 0.96);
+  /* See the light theme: menus stay readable over any content. */
+  --popover: #1d1e27;
   --popover-foreground: #f6f2ea;
-  --primary: #7c6dff;
-  --primary-foreground: #f7f5ff;
+  --primary: #f07a2e;
+  --primary-foreground: #1c1005;
+  --primary-hover: #f79455;
   --secondary: #2d2f3b;
   --secondary-foreground: #ece6dd;
   --muted: rgba(255, 255, 255, 0.06);
   --muted-foreground: #a7a3b8;
-  --accent: rgba(124, 109, 255, 0.16);
-  --accent-foreground: #f0ecff;
+  --accent: rgba(240, 122, 46, 0.16);
+  --accent-foreground: #fdece0;
   --destructive: #f06565;
-  --destructive-foreground: #fff7f7;
+  --destructive-foreground: #1a0606;
+  --destructive-hover: #f5807f;
+  --success: #34d399;
+  --success-foreground: #04150e;
   --border: rgba(255, 255, 255, 0.08);
   --input: rgba(255, 255, 255, 0.06);
-  --ring: rgba(124, 109, 255, 0.42);
+  --ring: rgba(240, 122, 46, 0.45);
   --sidebar: rgba(16, 17, 24, 0.82);
   --sidebar-foreground: #f6f2ea;
   --sidebar-border: rgba(255, 255, 255, 0.06);
+  --sidebar-solid: #16171f;
+  --scrim: rgba(0, 0, 0, 0.56);
   --panel: rgba(255, 255, 255, 0.03);
+  --shadow-primary: rgba(240, 122, 46, 0.28);
 }
 
 @theme inline {
@@ -62,6 +87,7 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -70,6 +96,9 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-hover: var(--destructive-hover);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -82,15 +111,23 @@
 }
 
 html {
+  /* Derived from --primary so the ambience follows the theme instead of being
+     pinned to one hue. */
   background:
-    radial-gradient(circle at top, rgba(124, 109, 255, 0.18), transparent 22%),
-    radial-gradient(circle at 80% 14%, rgba(229, 106, 31, 0.14), transparent 18%),
+    radial-gradient(circle at top, color-mix(in srgb, var(--primary) 20%, transparent), transparent 22%),
+    radial-gradient(circle at 80% 14%, color-mix(in srgb, var(--primary) 13%, transparent), transparent 18%),
     var(--background);
 }
 
 body {
-  height: 100vh;
-  overflow: hidden;
+  /* Two declarations on purpose: browsers without dvh support keep the vh line.
+     The fixed height + overflow:hidden used to make the whole document
+     unscrollable, which trapped the auth screens (measured: a /login button at
+     y=582 in a 568 viewport, and no scrollable ancestor at all). Chat keeps its
+     own locked shell via .app-shell plus h-dvh/overflow-hidden on the page. */
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: hidden;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 22%),
     radial-gradient(circle at top left, rgba(255, 255, 255, 0.04), transparent 24%),
@@ -127,27 +164,67 @@ textarea,
 }
 
 ::selection {
-  background: rgba(124, 109, 255, 0.26);
+  background: color-mix(in srgb, var(--primary) 30%, transparent);
+}
+
+/* Kill switch for the transitions above and for animate-bounce (the streaming
+   dots in a message bubble run forever). iteration-count is the part that
+   matters: duration alone still leaves an element visibly looping. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  body::before {
+    display: none;
+  }
 }
 
 .app-shell {
-  height: 100vh;
-  overflow: hidden;
+  /* Screens that must lock their own height (chat) add h-dvh + overflow-hidden
+     on top of this; content screens (auth, 404) grow past the viewport and let
+     the document scroll instead. */
+  min-height: 100vh;
+  min-height: 100dvh;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent 24%),
     var(--background);
 }
 
+/* A glass surface. The background is read from --glass-bg so a caller can
+   supply its own surface token (the sidebar drawer needs --sidebar, not the
+   generic --panel). It must NOT be a plain `background` declaration: this rule
+   is unlayered, so it beats every Tailwind bg-* utility in @layer utilities
+   regardless of order or specificity -- that is exactly how the sidebar's
+   bg-[var(--sidebar)] became dead code and the drawer rendered --panel
+   (48% white in light, 3% white in dark) instead of its own surface. */
 .glass-panel {
-  background: var(--panel);
+  background: var(--glass-bg, var(--panel));
   backdrop-filter: blur(18px);
 }
 
+/* Same surface, no backdrop blur. backdrop-filter is per-pixel work over
+   whatever is behind it, and message bubbles are the one surface that repeats
+   with thread length -- a long conversation used to composite dozens of blurred
+   layers while scrolling. Chrome and Safari keep the blur on the chrome
+   (header, sidebar, dialogs), where there is exactly one of each. */
+.surface-panel {
+  background: var(--panel);
+}
+
 .section-title {
-  font-size: clamp(2.2rem, 5vw, 4.4rem);
+  /* In-app headings, not a marketing hero. The previous clamp reached 4.4rem,
+     which made the empty chat state shout louder than the composer you are
+     supposed to use and pushed its own panel past a 320x568 viewport. */
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
   font-weight: 700;
-  line-height: 0.98;
-  letter-spacing: -0.04em;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
 }
 
 .section-kicker {
@@ -155,6 +232,147 @@ textarea,
   text-transform: uppercase;
   font-size: 0.7rem;
   color: var(--muted-foreground);
+}
+
+/* Assistant message typography. Hand-written, not the typography plugin: the
+   plugin emitted zero `.prose` rules in this pipeline (verified: no prose
+   selectors in dev or cold-boot stylesheets), so the bubble owns its styles
+   explicitly. Everything resolves through theme variables, which is why there
+   are no dark-mode variants here -- light and dark come free. `code` and `pre`
+   are deliberately untouched: the bubble renders those itself (inline chip
+   and Prism blocks). */
+.prose {
+  color: var(--foreground);
+  font-size: 0.9375rem;
+  line-height: 1.75;
+  overflow-wrap: break-word;
+}
+
+.prose > :first-child {
+  margin-top: 0;
+}
+
+.prose > :last-child {
+  margin-bottom: 0;
+}
+
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4 {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+  margin-top: 1.25em;
+  margin-bottom: 0.5em;
+}
+
+.prose h1 {
+  font-size: 1.5rem;
+}
+
+.prose h2 {
+  font-size: 1.25rem;
+}
+
+.prose h3 {
+  font-size: 1.125rem;
+}
+
+.prose h4 {
+  font-size: 1rem;
+}
+
+.prose p {
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
+}
+
+.prose a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.prose strong {
+  font-weight: 650;
+}
+
+.prose del {
+  text-decoration: line-through;
+}
+
+.prose ul,
+.prose ol {
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
+  padding-inline-start: 1.5em;
+}
+
+.prose ul {
+  list-style-type: disc;
+}
+
+.prose ol {
+  list-style-type: decimal;
+}
+
+.prose li {
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+}
+
+.prose li > ul,
+.prose li > ol {
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+}
+
+.prose blockquote {
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
+  padding-inline-start: 1em;
+  border-inline-start: 3px solid var(--border);
+  color: var(--muted-foreground);
+}
+
+.prose hr {
+  margin-top: 1.25em;
+  margin-bottom: 1.25em;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
+}
+
+.prose thead {
+  border-bottom: 2px solid var(--border);
+}
+
+.prose tbody tr {
+  border-bottom: 1px solid var(--border);
+}
+
+.prose tbody tr:last-child {
+  border-bottom: 0;
+}
+
+.prose th,
+.prose td {
+  padding: 0.5rem 0.75rem;
+  text-align: start;
+  vertical-align: top;
+}
+
+.prose th {
+  font-weight: 650;
 }
 
 /* Custom thin scrollbar for chat message list */

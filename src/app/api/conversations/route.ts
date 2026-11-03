@@ -7,98 +7,211 @@
 
 import { NextResponse } from "next/server";
 import { getServerSession } from "@/lib/auth/session";
+import { guardMutationRequest } from "@/lib/api/csrf";
+import { routeTimer } from "@/lib/api/observe";
 import {
     getConversations,
     createConversation,
     deleteAllConversations,
+    findConversationCursor,
 } from "@/lib/db/queries/conversations";
-import { getPreferences } from "@/lib/db/queries/preferences";
 import { createConversationSchema } from "@/lib/validators/schemas";
+import { z, ZodError } from "zod";
+import { MIN_PAGE_SIZE, MAX_PAGE_SIZE, DEFAULT_PAGE_SIZE } from "@/lib/constants";
+
+type CursorParse = { ok: true; cursor?: { id: string } } | { ok: false };
+
+/**
+ * A cursor is its own unique id and nothing else. Measured against the SQLite
+ * database, the shape this replaces failed in two ways: a garbage
+ * `cursorUpdatedAt` reached `new Date()` and Prisma answered
+ * PrismaClientValidationError, which the handler reported as a 500 for what the
+ * client caused; and a request with `cursorId` but no `cursorUpdatedAt` built no
+ * cursor at all, so the client was silently handed page one again and paged
+ * forever. A cursor that points at nothing (or at another user's conversation)
+ * seeks to an empty page with no nextCursor, which the client reads as "no more
+ * conversations" and silently stops -- so the id is resolved to a row this user
+ * owns before it is used.
+ */
+async function readCursor(
+    userId: string,
+    raw: string | null,
+    archived: boolean
+): Promise<CursorParse> {
+    if (!raw) return { ok: true };
+    const parsed = z.string().cuid().safeParse(raw);
+    if (!parsed.success) return { ok: false };
+    const cursor = await findConversationCursor(userId, parsed.data, archived);
+    return cursor ? { ok: true, cursor } : { ok: false };
+}
+
+interface ListParams {
+    limit: number;
+    cursorId: string | null;
+    archived: boolean;
+    q: string;
+}
+
+function readListParams(url: string): ListParams {
+    const searchParams = new URL(url).searchParams;
+
+    // Validate and clamp limit parameter
+    const limitParam = searchParams.get("limit");
+    let limit = DEFAULT_PAGE_SIZE;
+    if (limitParam) {
+        const parsed = parseInt(limitParam, 10);
+        if (!isNaN(parsed)) {
+            // Clamp to valid range
+            limit = Math.max(MIN_PAGE_SIZE, Math.min(MAX_PAGE_SIZE, parsed));
+        }
+    }
+
+    return {
+        limit,
+        cursorId: searchParams.get("cursorId"),
+        archived: searchParams.get("archived") === "true",
+        q: (searchParams.get("q") ?? "").trim().slice(0, 100),
+    };
+}
+
+type PageResult = { ok: true; body: unknown } | { ok: false; error: string };
+
+async function loadConversationPage(userId: string, params: ListParams): Promise<PageResult> {
+    // A cursor names a position in the unfiltered list: the cursor row itself
+    // is only checked for ownership, not for matching the filter, so resuming
+    // a filtered search from it would silently skip or repeat rows. Search is
+    // first-page-only instead of wrong-page.
+    if (params.q && params.cursorId) {
+        return { ok: false, error: "cursorId is not supported with q" };
+    }
+    const parsedCursor = await readCursor(userId, params.cursorId, params.archived);
+    if (!parsedCursor.ok) {
+        return { ok: false, error: "Invalid cursor" };
+    }
+    const result = await getConversations(userId, params.limit, parsedCursor.cursor, {
+        archived: params.archived,
+        q: params.q || undefined,
+    });
+    // A nextCursor from a filtered first page would be refused by the branch
+    // above, so advertising one is a trap. Search fits in one page at the
+    // sidebar limit; deeper paging stays unfiltered.
+    if (params.q) {
+        return { ok: true, body: { conversations: result.conversations, nextCursor: null } };
+    }
+    return { ok: true, body: result };
+}
 
 export async function GET(req: Request) {
+    const done = routeTimer("GET", "/api/conversations");
     try {
         const session = await getServerSession();
         if (!session?.user?.id) {
+            done(401);
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const { searchParams } = new URL(req.url);
-        const limit = parseInt(searchParams.get("limit") || "50");
-        const cursorId = searchParams.get("cursorId");
-        const cursorUpdatedAt = searchParams.get("cursorUpdatedAt");
-        const archived = searchParams.get("archived") === "true";
-
-        const cursor = cursorId && cursorUpdatedAt
-            ? { id: cursorId, updatedAt: new Date(cursorUpdatedAt) }
-            : undefined;
-
-        const result = await getConversations(session.user.id, limit, cursor, { archived });
-        return NextResponse.json(result);
+        const page = await loadConversationPage(session.user.id, readListParams(req.url));
+        if (!page.ok) {
+            done(400);
+            return NextResponse.json(
+                { error: page.error },
+                { status: 400, headers: { "Cache-Control": "no-store" } }
+            );
+        }
+        done(200);
+        return NextResponse.json(page.body);
     } catch (error: unknown) {
         console.error("Failed to fetch conversations:", error);
-        const errorMessage = error instanceof Error ? error.message : "Failed to fetch conversations";
+        done(500);
         return NextResponse.json(
-            { error: errorMessage },
+            { error: "Failed to fetch conversations" },
             { status: 500 }
         );
     }
 }
 
 export async function POST(req: Request) {
+    const done = routeTimer("POST", "/api/conversations");
+    const rejection = guardMutationRequest(req, true);
+    if (rejection) {
+        done(rejection.status);
+        return rejection;
+    }
+
     try {
         const session = await getServerSession();
         if (!session?.user?.id) {
+            done(401);
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
         const body = await req.json();
-        const { title, providerId, modelId, projectId, folderId } =
+        // createConversationSchema requires providerId/modelId, so there is no
+        // preferences fallback to apply here (it was unreachable, and cost a
+        // query per create).
+        const { title, providerId, modelId, projectId } =
             createConversationSchema.parse(body);
-
-        // Use user preferences as defaults if not provided
-        const preferences = await getPreferences(session.user.id);
-        const effectiveProviderId = providerId ?? preferences?.defaultProviderId ?? "openai";
-        const effectiveModelId = modelId ?? preferences?.defaultModelId ?? "gpt-4o";
 
         const conversation = await createConversation(
             session.user.id,
-            effectiveProviderId,
-            effectiveModelId,
-            { title, projectId, folderId }
+            providerId,
+            modelId,
+            { title, projectId }
         );
 
+        done(201);
         return NextResponse.json(conversation, { status: 201 });
     } catch (error: unknown) {
         console.error("Failed to create conversation:", error);
 
-        if (error instanceof Error && error.name === "ZodError") {
+        if (error instanceof ZodError) {
+            done(400);
             return NextResponse.json(
-                { error: "Invalid request", details: (error as import('zod').ZodError).issues },
+                { error: "Invalid request", details: error.issues },
                 { status: 400 }
             );
         }
 
-        const errorMessage = error instanceof Error ? error.message : "Failed to create conversation";
+        if (error instanceof Error && error.message === "Project not found or access denied") {
+            done(404);
+            return NextResponse.json(
+                { error: error.message },
+                { status: 404 }
+            );
+        }
+
+        done(500);
         return NextResponse.json(
-            { error: errorMessage },
+            { error: "Failed to create conversation" },
             { status: 500 }
         );
     }
 }
 
-export async function DELETE() {
+export async function DELETE(req: Request) {
+    const done = routeTimer("DELETE", "/api/conversations");
+    const rejection = guardMutationRequest(req);
+    if (rejection) {
+        done(rejection.status);
+        return rejection;
+    }
+
     try {
         const session = await getServerSession();
         if (!session?.user?.id) {
+            done(401);
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
         const deletedCount = await deleteAllConversations(session.user.id);
+        done(200);
         return NextResponse.json({ success: true, deletedCount });
     } catch (error: unknown) {
         console.error("Failed to delete all conversations:", error);
-        const errorMessage =
-            error instanceof Error ? error.message : "Failed to delete all conversations";
-        return NextResponse.json({ error: errorMessage }, { status: 500 });
+        done(500);
+        return NextResponse.json(
+            { error: "Failed to delete all conversations" },
+            { status: 500 }
+        );
     }
 }

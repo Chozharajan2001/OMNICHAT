@@ -1,9 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { FolderKanban, Plus, Trash2 } from "lucide-react";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Input } from "@/components/ui/input";
+import { Modal } from "@/components/ui/modal";
+import { FolderKanban, Pencil, Plus, Trash2 } from "lucide-react";
 import { useToast } from "@/stores/toast-store";
+import { useJsonResource } from "@/hooks/useJsonResource";
+import { DEFAULT_PROJECT_COLOR, ProjectColorField, dotStyleFor } from "@/components/projects/project-color";
 
 interface ProjectItem {
     id: string;
@@ -14,51 +19,155 @@ interface ProjectItem {
     };
 }
 
-export default function ProjectsSettingsPage() {
-    const { success, error: toastError } = useToast();
-    const [projects, setProjects] = useState<ProjectItem[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
+function projectDeleteCopy(project: ProjectItem | null): string {
+    return `Delete ${project?.name ?? "this project"}? Its conversations stay in the workspace and become unassigned.`;
+}
 
-    const fetchProjects = useCallback(async () => {
+// Create and rename agree on what "unchanged" means so Save never fires a
+// no-op write, and the color half of the comparison cannot be skipped just
+// because the field is new.
+function isRenameUnchanged(draftName: string, currentName: string, draftColor: string, currentColor: string | null | undefined): boolean {
+    return draftName.trim() === currentName && draftColor === (currentColor ?? DEFAULT_PROJECT_COLOR);
+}
+
+// Owns everything about renaming from a row: the button, the open state,
+// and the dialog. ProjectsSettingsPage only passes the project and a refresh.
+function RenameControl({ project, onRenamed }: {
+    project: ProjectItem;
+    onRenamed: () => void;
+}) {
+    const [open, setOpen] = useState(false);
+
+    return (
+        <>
+            <Button
+                variant="outline"
+                size="sm"
+                className="rounded-full"
+                aria-label={`Rename ${project.name}`}
+                onClick={() => setOpen(true)}
+            >
+                <Pencil className="h-3.5 w-3.5" />
+                Rename
+            </Button>
+            {open ? (
+                <RenameProjectDialog
+                    key={project.id}
+                    project={project}
+                    onClose={() => setOpen(false)}
+                    onRenamed={() => {
+                        setOpen(false);
+                        onRenamed();
+                    }}
+                />
+            ) : null}
+        </>
+    );
+}
+// The dialog owns its draft, its PATCH, and the duplicate-name recovery: a
+// clash answers 400 with the reason, and surfacing response.error (not a bare
+// "Rename failed") is what makes it recoverable.
+function RenameProjectDialog({ project, onClose, onRenamed }: {
+    project: ProjectItem;
+    onClose: () => void;
+    onRenamed: () => void;
+}) {
+    const { success, error: toastError } = useToast();
+    const [renameName, setRenameName] = useState(project.name);
+    const [renameColor, setRenameColor] = useState(project.color ?? DEFAULT_PROJECT_COLOR);
+
+    const renameProject = async () => {
+        const name = renameName.trim();
+        if (!name) return;
+
         try {
-            const response = await fetch("/api/projects");
+            const response = await fetch(`/api/projects/${project.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name, color: renameColor }),
+            });
+
+            const payload = await response.json();
             if (!response.ok) {
-                throw new Error("Failed to load projects");
+                throw new Error(payload.error || "Failed to rename project");
             }
 
-            const data = await response.json();
-            setProjects(data.projects || []);
+            onRenamed();
+            success("Project renamed");
         } catch (error) {
-            console.error("Failed to fetch projects:", error);
-            toastError("Load failed");
-        } finally {
-            setIsLoading(false);
+            console.error("Failed to rename project:", error);
+            toastError("Rename failed", error instanceof Error ? error.message : undefined);
         }
-    }, [toastError]);
+    };
 
-    useEffect(() => {
-        void fetchProjects();
-    }, [fetchProjects]);
+    return (
+        <Modal open title={`Rename ${project.name}`} onClose={onClose} showCloseButton>
+            <div className="space-y-4">
+                <Input
+                    value={renameName}
+                    onChange={(event) => setRenameName(event.target.value)}
+                    placeholder="Project name"
+                    className="h-11 rounded-xl"
+                    autoFocus
+                    onKeyDown={(event) => {
+                        if (event.key === "Enter") void renameProject();
+                    }}
+                />
+                <ProjectColorField value={renameColor} onChange={setRenameColor} />
+                <div className="flex gap-2">
+                    <Button variant="ghost" className="flex-1 rounded-xl" onClick={onClose}>
+                        Cancel
+                    </Button>
+                    <Button
+                        className="flex-1 rounded-xl"
+                        onClick={renameProject}
+                        disabled={!renameName.trim() || isRenameUnchanged(renameName, project.name, renameColor, project.color)}
+                    >
+                        Save
+                    </Button>
+                </div>
+            </div>
+        </Modal>
+    );
+}
 
-    const handleCreateProject = async () => {
-        const name = window.prompt("Project name");
-        if (!name?.trim()) {
-            return;
-        }
+export default function ProjectsSettingsPage() {
+    const { success, error: toastError } = useToast();
+    const { data, loading: isLoading, error: loadError, refresh: fetchProjects } =
+        useJsonResource<{ projects: ProjectItem[] }>("/api/projects", "Failed to load projects");
+    const projects = data?.projects ?? [];
+    const [showCreate, setShowCreate] = useState(false);
+    const [newName, setNewName] = useState("");
+    const [newColor, setNewColor] = useState(DEFAULT_PROJECT_COLOR);
+    const [deleteTarget, setDeleteTarget] = useState<ProjectItem | null>(null);
+
+    if (loadError) {
+        return <div role="alert" className="space-y-3 text-sm text-destructive">
+            <p>{loadError}</p>
+            <Button onClick={() => void fetchProjects()}>Retry</Button>
+        </div>;
+    }
+
+    const createProject = async () => {
+        const name = newName.trim();
+        if (!name) return;
 
         try {
             const response = await fetch("/api/projects", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name: name.trim() }),
+                body: JSON.stringify({ name, color: newColor }),
             });
 
-            const data = await response.json();
+            const payload = await response.json();
             if (!response.ok) {
-                throw new Error(data.error || "Failed to create project");
+                throw new Error(payload.error || "Failed to create project");
             }
 
             await fetchProjects();
+            setNewName("");
+            setNewColor(DEFAULT_PROJECT_COLOR);
+            setShowCreate(false);
             success("Project created");
         } catch (error) {
             console.error("Failed to create project:", error);
@@ -67,10 +176,6 @@ export default function ProjectsSettingsPage() {
     };
 
     const handleDeleteProject = async (projectId: string) => {
-        if (!confirm("Delete this project? Conversations will remain and be unassigned.")) {
-            return;
-        }
-
         try {
             const response = await fetch(`/api/projects/${projectId}`, {
                 method: "DELETE",
@@ -88,6 +193,11 @@ export default function ProjectsSettingsPage() {
         }
     };
 
+    const confirmDeleteTarget = () => {
+        if (!deleteTarget) return;
+        handleDeleteProject(deleteTarget.id);
+    };
+
     return (
         <div className="space-y-8">
             <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -99,7 +209,7 @@ export default function ProjectsSettingsPage() {
                         of work instead of a flat list.
                     </p>
                 </div>
-                <Button onClick={handleCreateProject} className="rounded-full">
+                <Button onClick={() => setShowCreate(true)} className="rounded-full">
                     <Plus className="h-4 w-4" />
                     New project
                 </Button>
@@ -107,7 +217,7 @@ export default function ProjectsSettingsPage() {
 
             <section className="rounded-[1.75rem] border border-border/70 bg-background/30 p-6">
                 {isLoading ? (
-                    <div className="text-sm text-muted-foreground">Loading projects...</div>
+                    <div role="status" aria-live="polite" className="text-sm text-muted-foreground">Loading projects...</div>
                 ) : projects.length === 0 ? (
                     <div className="rounded-2xl border border-dashed border-border/70 bg-background/20 p-4 text-sm text-muted-foreground">
                         No projects yet. Create one to start grouping conversations.
@@ -123,7 +233,7 @@ export default function ProjectsSettingsPage() {
                                     <div className="flex items-center gap-2 font-medium">
                                         <span
                                             className="h-2.5 w-2.5 rounded-full"
-                                            style={{ backgroundColor: project.color || "#7c6dff" }}
+                                            style={dotStyleFor(project.color)}
                                         />
                                         <span className="truncate">{project.name}</span>
                                     </div>
@@ -137,11 +247,12 @@ export default function ProjectsSettingsPage() {
                                         <FolderKanban className="h-3.5 w-3.5" />
                                         Active in sidebar
                                     </Button>
+                                    <RenameControl project={project} onRenamed={() => void fetchProjects()} />
                                     <Button
                                         variant="destructive"
                                         size="sm"
                                         className="rounded-full"
-                                        onClick={() => handleDeleteProject(project.id)}
+                                        onClick={() => setDeleteTarget(project)}
                                     >
                                         <Trash2 className="h-3.5 w-3.5" />
                                         Delete
@@ -152,6 +263,38 @@ export default function ProjectsSettingsPage() {
                     </div>
                 )}
             </section>
+
+            <Modal open={showCreate} title="New Project" onClose={() => setShowCreate(false)} showCloseButton>
+                <div className="space-y-4">
+                    <Input
+                        value={newName}
+                        onChange={(event) => setNewName(event.target.value)}
+                        placeholder="Project name"
+                        className="h-11 rounded-xl"
+                        autoFocus
+                        onKeyDown={(event) => {
+                            if (event.key === "Enter") void createProject();
+                        }}
+                    />
+                    <ProjectColorField value={newColor} onChange={setNewColor} />
+                    <div className="flex gap-2">
+                        <Button variant="ghost" className="flex-1 rounded-xl" onClick={() => setShowCreate(false)}>
+                            Cancel
+                        </Button>
+                        <Button className="flex-1 rounded-xl" onClick={createProject} disabled={!newName.trim()}>
+                            Create
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+
+            <ConfirmDialog
+                open={!!deleteTarget}
+                title="Delete Project"
+                description={projectDeleteCopy(deleteTarget)}
+                onConfirm={confirmDeleteTarget}
+                onClose={() => setDeleteTarget(null)}
+            />
         </div>
     );
 }

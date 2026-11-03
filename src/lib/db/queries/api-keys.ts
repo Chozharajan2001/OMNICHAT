@@ -105,7 +105,11 @@ export async function markKeyValid(
         where: { userId_providerId: { userId, providerId } },
         data: {
             isValid,
-            lastValidatedAt: isValid ? new Date() : null,
+            // A failed check -- including a timeout or an unreachable provider,
+            // which validateApiKey cannot tell from a refusal -- must not erase
+            // when this key was last confirmed. That timestamp is the history;
+            // isValid is the current state.
+            ...(isValid ? { lastValidatedAt: new Date() } : {}),
         },
     });
 }

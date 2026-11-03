@@ -3,10 +3,16 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Archive, EyeOff, MessageSquareDashed, RotateCcw, Trash2 } from "lucide-react";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Archive, Download, EyeOff, MessageSquareDashed, RotateCcw, Trash2 } from "lucide-react";
 import { useChatStore, type Conversation } from "@/stores/chat-store";
+import { downloadConversationExport } from "@/lib/conversation-export";
 import { usePersonalizationStore } from "@/stores/personalization-store";
 import { useToast } from "@/stores/toast-store";
+
+function archivedDeleteCopy(conversation: Conversation | null): string {
+    return `“${conversation?.title ?? "This conversation"}” and its messages will be deleted permanently.`;
+}
 
 export default function ChatsSettingsPage() {
     const router = useRouter();
@@ -18,6 +24,8 @@ export default function ChatsSettingsPage() {
     const [archivedConversations, setArchivedConversations] = useState<Conversation[]>([]);
     const [isLoadingArchived, setIsLoadingArchived] = useState(true);
     const [feedback, setFeedback] = useState<string | null>(null);
+    const [confirmingDeleteAll, setConfirmingDeleteAll] = useState(false);
+    const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null);
 
     useEffect(() => {
         const fetchArchived = async () => {
@@ -42,10 +50,6 @@ export default function ChatsSettingsPage() {
     }, []);
 
     const handleDeleteAll = async () => {
-        if (!confirm("Delete all conversations? This cannot be undone.")) {
-            return;
-        }
-
         setIsDeleting(true);
         setFeedback(null);
 
@@ -98,10 +102,6 @@ export default function ChatsSettingsPage() {
     };
 
     const handleDeleteArchivedConversation = async (id: string) => {
-        if (!confirm("Delete this archived conversation?")) {
-            return;
-        }
-
         setFeedback(null);
 
         try {
@@ -123,6 +123,21 @@ export default function ChatsSettingsPage() {
             setFeedback(errorMessage);
             toastError("Delete failed", errorMessage);
         }
+    };
+
+    const confirmDeleteTarget = () => {
+        if (!deleteTarget) return;
+        handleDeleteArchivedConversation(deleteTarget.id);
+    };
+
+    const handleExportConversation = (id: string, title: string) => {
+        setFeedback(null);
+        void downloadConversationExport(id, title).catch((error: unknown) => {
+            const errorMessage =
+                error instanceof Error ? error.message : "Failed to export conversation";
+            setFeedback(errorMessage);
+            toastError("Export failed", errorMessage);
+        });
     };
 
     return (
@@ -188,7 +203,7 @@ export default function ChatsSettingsPage() {
 
                     <Button
                         variant="destructive"
-                        onClick={handleDeleteAll}
+                        onClick={() => setConfirmingDeleteAll(true)}
                         disabled={isDeleting}
                         className="rounded-full"
                     >
@@ -242,9 +257,19 @@ export default function ChatsSettingsPage() {
                                             Restore
                                         </Button>
                                         <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => handleExportConversation(conversation.id, conversation.title)}
+                                            className="rounded-full"
+                                            aria-label={`Export ${conversation.title} as JSON`}
+                                        >
+                                            <Download className="h-3.5 w-3.5" />
+                                            Export
+                                        </Button>
+                                        <Button
                                             variant="destructive"
                                             size="sm"
-                                            onClick={() => handleDeleteArchivedConversation(conversation.id)}
+                                            onClick={() => setDeleteTarget(conversation)}
                                             className="rounded-full"
                                         >
                                             <Trash2 className="h-3.5 w-3.5" />
@@ -264,15 +289,15 @@ export default function ChatsSettingsPage() {
                         <MessageSquareDashed className="h-5 w-5" />
                     </div>
                     <div>
-                        <h3 className="text-xl font-semibold">Pending chat organization features</h3>
+                        <h3 className="text-xl font-semibold">Not built yet</h3>
                         <p className="text-sm text-muted-foreground">
-                            These are the next higher-value workspace improvements inspired by Qwen/Grok.
+                            Workspace capabilities that do not exist in this build.
                         </p>
                     </div>
                 </div>
 
                 <div className="grid gap-3 md:grid-cols-2">
-                    {["Archive chats", "Projects/grouping", "Language selector", "Voice mode"].map((item) => (
+                    {["Voice mode", "Model comparison", "Team workspaces"].map((item) => (
                         <div
                             key={item}
                             className="rounded-2xl border border-border/70 bg-background/20 px-4 py-3 text-sm text-muted-foreground"
@@ -288,6 +313,22 @@ export default function ChatsSettingsPage() {
                     </div>
                 ) : null}
             </section>
+
+            <ConfirmDialog
+                open={confirmingDeleteAll}
+                title="Delete all conversations"
+                description="Every conversation and its messages will be removed, archived ones included. Nothing survives this action, and it cannot be undone."
+                confirmLabel="Delete everything"
+                onConfirm={handleDeleteAll}
+                onClose={() => setConfirmingDeleteAll(false)}
+            />
+            <ConfirmDialog
+                open={!!deleteTarget}
+                title="Delete archived conversation"
+                description={archivedDeleteCopy(deleteTarget)}
+                onConfirm={confirmDeleteTarget}
+                onClose={() => setDeleteTarget(null)}
+            />
         </div>
     );
 }

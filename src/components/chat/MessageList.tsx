@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { ArrowDown } from "lucide-react";
 import { MessageBubble } from "./MessageBubble";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useChatStore, type MessagePageInfo } from "@/stores/chat-store";
 import { usePersonalizationStore } from "@/stores/personalization-store";
+import { DEFAULT_WELCOME_MESSAGE } from "@/lib/constants";
 
 interface Message {
     id: string;
@@ -18,6 +21,69 @@ interface MessageListProps {
     isLoading?: boolean;
     isInitialLoading?: boolean;
     showTokenCount?: boolean;
+    onLoadOlder: () => Promise<void>;
+}
+
+// Its own component because MessageList spent its branch budget on rendering
+// states. It owns the button, the loading flag, and the scroll anchor: older
+// windows land above the visible transcript, and without anchoring the prepend
+// pushes everything down and the reader loses their place.
+function OlderMessagesPager({ page, scrollRef, onBeginLoad, onLoadOlder }: {
+    page: MessagePageInfo | null;
+    scrollRef: RefObject<HTMLDivElement | null>;
+    onBeginLoad: () => void;
+    onLoadOlder: () => Promise<void>;
+}) {
+    const [loading, setLoading] = useState(false);
+    if (!page?.hasMorePrev) return null;
+
+    const handleLoad = async () => {
+        const el = scrollRef.current;
+        const prevHeight = el?.scrollHeight ?? 0;
+        const prevTop = el?.scrollTop ?? 0;
+        onBeginLoad();
+        setLoading(true);
+        try {
+            await onLoadOlder();
+        } finally {
+            setLoading(false);
+        }
+        requestAnimationFrame(() => {
+            const next = scrollRef.current;
+            if (next) next.scrollTop = prevTop + (next.scrollHeight - prevHeight);
+        });
+    };
+
+    return (
+        <div className="flex justify-center px-4 pb-1 pt-3">
+            <button
+                type="button"
+                onClick={() => void handleLoad()}
+                disabled={loading}
+                className="rounded-full border border-border/70 bg-background/40 px-4 py-2 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:cursor-wait disabled:opacity-60"
+            >
+                {loading ? "Loading older messages..." : "Load older messages"}
+            </button>
+        </div>
+    );
+}
+
+// Within this many pixels of the bottom the reader is still "at the end", so
+// new content keeps pulling them along.
+const STICK_THRESHOLD_PX = 80;
+
+function JumpToLatest({ visible, onClick }: { visible: boolean; onClick: () => void }) {
+    if (!visible) return null;
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className="glass-panel absolute bottom-4 left-1/2 flex h-11 -translate-x-1/2 items-center gap-2 rounded-full border border-border/70 px-4 text-sm shadow-[0_16px_40px_rgba(0,0,0,0.18)]"
+        >
+            <ArrowDown className="h-4 w-4" aria-hidden="true" />
+            Jump to latest
+        </button>
+    );
 }
 
 function MessageSkeleton() {
@@ -33,16 +99,52 @@ function MessageSkeleton() {
     );
 }
 
-export function MessageList({ messages, isLoading, isInitialLoading, showTokenCount = false }: MessageListProps) {
-    const scrollRef = useRef<HTMLDivElement>(null);
-    const chatDensity = usePersonalizationStore((state) => state.chatDensity);
-    const welcomeMessage = usePersonalizationStore((state) => state.welcomeMessage);
+// Module scope: MessageList's own branches are all spent, and a read-time
+// fallback belongs to the value, not to the component.
+function greetingFor(saved: string): string {
+    return saved || DEFAULT_WELCOME_MESSAGE;
+}
 
+export function MessageList({ messages, isLoading, isInitialLoading, showTokenCount = false, onLoadOlder }: MessageListProps) {
+    const scrollRef = useRef<HTMLDivElement>(null);
+    const stickToBottom = useRef(true);
+    const [awayFromBottom, setAwayFromBottom] = useState(false);
+    const chatDensity = usePersonalizationStore((state) => state.chatDensity);
+    // The window lives in the store: selecting it here adds no branches to
+    // this component, and the pager alone decides whether it shows.
+    const page = useChatStore((state) => state.page);
+    // An empty greeting is the user's own saved value; the default sentence is
+    // applied here at read time instead of being written back into storage.
+    const welcomeMessage = usePersonalizationStore((state) => greetingFor(state.welcomeMessage));
+    // Reading history un-sticks the transcript so a reply streaming in below
+    // does not yank the reader back down mid-answer.
+    const stopSticking = useCallback(() => {
+        stickToBottom.current = false;
+        setAwayFromBottom(true);
+    }, []);
+
+    const scrollToLatest = useCallback(() => {
+        const el = scrollRef.current;
+        if (!el) return;
+        el.scrollTop = el.scrollHeight;
+        stickToBottom.current = true;
+        setAwayFromBottom(false);
+    }, []);
+
+    // Only while the reader is at the end. This used to jump to the bottom on
+    // every message change, which yanked anyone who scrolled up back down on
+    // each streamed token, so history could not be read while an answer ran.
     useEffect(() => {
-        if (scrollRef.current) {
-            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-        }
-    }, [messages]);
+        if (stickToBottom.current) scrollToLatest();
+    }, [messages, scrollToLatest]);
+
+    function handleScroll() {
+        const el = scrollRef.current;
+        if (!el) return;
+        const away = el.scrollHeight - el.scrollTop - el.clientHeight > STICK_THRESHOLD_PX;
+        stickToBottom.current = !away;
+        setAwayFromBottom(away);
+    }
 
     // Show skeleton during initial load
     if (isInitialLoading) {
@@ -60,9 +162,13 @@ export function MessageList({ messages, isLoading, isInitialLoading, showTokenCo
 
     if (messages.length === 0) {
         return (
-            <div className="h-full overflow-auto">
-                <div className="flex h-full flex-col items-center justify-center px-6 py-12 text-center">
-                    <div className="glass-panel max-w-4xl rounded-[2rem] border border-border/70 px-8 py-12 shadow-[0_28px_120px_rgba(0,0,0,0.24)]">
+            <div
+                className="h-full overflow-auto"
+                tabIndex={0}
+                aria-label="Welcome panel"
+            >
+                <div className="flex min-h-full flex-col items-center justify-center px-4 py-6 text-center sm:px-6 sm:py-12">
+                    <div className="glass-panel max-w-4xl rounded-[2rem] border border-border/70 px-5 py-8 sm:px-8 sm:py-12 shadow-[0_28px_120px_rgba(0,0,0,0.24)]">
                         <div className="section-kicker mb-4">Personal workspace</div>
                         <h2 className="section-title mb-4">
                             Shape one assistant desk for every model you use.
@@ -88,30 +194,42 @@ export function MessageList({ messages, isLoading, isInitialLoading, showTokenCo
     }
 
     return (
-        <div
-            ref={scrollRef}
-            role="log"
-            aria-live="polite"
-            aria-label="Chat messages"
-            className="chat-scroll h-full overflow-y-auto rounded-[2rem] border border-border/60 bg-background/20"
-        >
-            <div className={chatDensity === "compact" ? "flex flex-col py-3" : "flex flex-col py-4"}>
-                {messages.map((message, index) => (
-                    <MessageBubble
-                        key={message.id || `msg-${index}`}
-                        role={message.role}
-                        content={message.content}
-                        tokenCount={message.tokenCount}
-                        showTokenCount={showTokenCount}
-                        density={chatDensity}
-                        isStreaming={
-                            isLoading &&
-                            index === messages.length - 1 &&
-                            message.role === "assistant"
-                        }
+        <div className="relative h-full">
+            <div
+                ref={scrollRef}
+                onScroll={handleScroll}
+                role="log"
+                aria-live="polite"
+                aria-label="Chat messages"
+                tabIndex={0}
+                className="chat-scroll h-full overflow-y-auto rounded-[2rem] border border-border/60 bg-background/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+                <div className={chatDensity === "compact" ? "flex flex-col py-3" : "flex flex-col py-4"}>
+                    <OlderMessagesPager
+                        page={page}
+                        scrollRef={scrollRef}
+                        onBeginLoad={stopSticking}
+                        onLoadOlder={onLoadOlder}
                     />
-                ))}
+                    {messages.map((message, index) => (
+                        <MessageBubble
+                            key={message.id || `msg-${index}`}
+                            role={message.role}
+                            content={message.content}
+                            tokenCount={message.tokenCount}
+                            showTokenCount={showTokenCount}
+                            density={chatDensity}
+                            isStreaming={
+                                isLoading &&
+                                index === messages.length - 1 &&
+                                message.role === "assistant"
+                            }
+                        />
+                    ))}
+                </div>
             </div>
+
+            <JumpToLatest visible={awayFromBottom} onClick={scrollToLatest} />
         </div>
     );
 }

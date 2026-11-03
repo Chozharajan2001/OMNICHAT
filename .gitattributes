@@ -1,0 +1,6 @@
+# Ensure shell scripts always use LF endings, regardless of core.autocrlf.
+# CRLF in a shell script breaks `#!/bin/sh` in Linux containers (alpine) and
+# git hooks — the trailing \r causes "not found" / "exec format error".
+*.sh text eol=lf
+.githooks/pre-commit text eol=lf
+scripts/docker-entrypoint.sh text eol=lf

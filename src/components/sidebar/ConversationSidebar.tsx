@@ -1,36 +1,154 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useJsonResource } from "@/hooks/useJsonResource";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useChatStore, type Conversation } from "@/stores/chat-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Modal } from "@/components/ui/modal";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { ConversationList } from "./ConversationList";
+import { ProjectList, type ProjectSummary } from "./ProjectList";
+import { DEFAULT_PROJECT_COLOR, ProjectColorField } from "@/components/projects/project-color";
 import {
     Command,
-    FolderPlus,
     PanelLeft,
     PanelLeftClose,
     Plus,
     Search,
     Settings,
     Sparkles,
-    X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { downloadConversationExport } from "@/lib/conversation-export";
 import { usePersonalizationStore } from "@/stores/personalization-store";
 import { useToast } from "@/stores/toast-store";
+import { MAX_PAGE_SIZE } from "@/lib/constants";
 
-interface ProjectItem {
-    id: string;
-    name: string;
-    color?: string | null;
-    _count?: {
-        conversations: number;
+// A 400 from the API carries the reason (a project name clash, for instance);
+// a bare "creation failed" made that look like a malfunction.
+function failureDetail(error: unknown): string | undefined {
+    return error instanceof Error && error.message ? error.message : undefined;
+}
+
+// The list page is asked for at the largest size the API will serve (it
+// clamps to MAX_PAGE_SIZE). A typed query is also sent as `?q=` (debounced),
+// so titles beyond the loaded page are found server-side; the in-memory filter
+// below then applies project scope and last-message matching over the page.
+const SIDEBAR_CONVERSATION_LIMIT = MAX_PAGE_SIZE;
+
+// One request per pause, not per keystroke: without the debounce every letter
+// refetches the list and the responses race.
+const SEARCH_DEBOUNCE_MS = 250;
+
+interface ConversationPage {
+    conversations: Conversation[];
+    nextCursor?: { id: string } | null;
+}
+
+// One caption for every list state. The unconditional branch ("most recent
+// chats") covers the unfiltered list; the query branch covers search, where the
+// server matched titles across all chats and only the first page is shown.
+// Kept out of the component so its own complexity budget is untouched.
+export function scopeCaption(hasNextPage: boolean, rawQuery: string): ReactNode | null {
+    if (!hasNextPage) return null;
+    const scope = rawQuery.trim() === "" ? "most recent chats" : "title matches";
+    return (
+        <p className="px-1 pt-2 text-xs leading-5 text-muted-foreground">
+            Showing the first {SIDEBAR_CONVERSATION_LIMIT} {scope}.
+        </p>
+    );
+}
+
+// Owns everything about renaming a thread: the draft, the PATCH, and the
+// failure toast. Split out so the sidebar keeps its branch budget.
+function RenameConversationDialog({ conversation, onClose, onRenamed }: {
+    conversation: { id: string; title: string };
+    onClose: () => void;
+    onRenamed: (name: string) => void;
+}) {
+    const { success, error: toastError } = useToast();
+    const [draft, setDraft] = useState(conversation.title);
+
+    const rename = async () => {
+        const name = draft.trim();
+        if (!name) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/conversations/${conversation.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ title: name }),
+            });
+            if (!response.ok) {
+                const payload = (await response.json().catch(() => null)) as {
+                    error?: unknown;
+                } | null;
+                throw new Error(
+                    typeof payload?.error === "string" ? payload.error : "Failed to rename conversation"
+                );
+            }
+
+            onRenamed(name);
+            success("Conversation renamed");
+        } catch (error) {
+            console.error("Failed to rename conversation:", error);
+            toastError("Rename failed", error instanceof Error ? error.message : undefined);
+        }
     };
+
+    return (
+        <Modal open title="Rename conversation" onClose={onClose} showCloseButton>
+            <div className="space-y-4">
+                <Input
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    placeholder="Conversation title"
+                    maxLength={200}
+                    className="h-11 rounded-xl"
+                    autoFocus
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                            void rename();
+                        }
+                    }}
+                />
+                <div className="flex gap-2">
+                    <Button
+                        variant="ghost"
+                        className="flex-1 rounded-xl"
+                        onClick={onClose}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        className="flex-1 rounded-xl"
+                        onClick={() => void rename()}
+                        disabled={!draft.trim() || draft.trim() === conversation.title}
+                    >
+                        Save
+                    </Button>
+                </div>
+            </div>
+        </Modal>
+    );
+}
+
+/**
+ * Only one component may describe an empty list, or the two messages contradict
+ * each other: a filtered-out list is not an account with nothing in it. The
+ * wording lives here so ConversationSidebar's own complexity stays unchanged.
+ */
+function conversationListHint(searchQuery: string): string {
+    const query = searchQuery.trim();
+    return query
+        ? `No chat in this list matches “${query}”.`
+        : "No conversations yet. Start one and it will appear here.";
 }
 
 export function ConversationSidebar() {
@@ -41,50 +159,50 @@ export function ConversationSidebar() {
         conversationId,
         clearMessages,
         isSidebarOpen,
+        listVersion,
         setActiveProjectId,
+        setConversationTitle,
         toggleSidebar,
         setSidebarOpen,
     } = useChatStore();
     const { success, error: toastError } = useToast();
 
-    const [conversations, setConversations] = useState<Conversation[]>([]);
-    const [projects, setProjects] = useState<ProjectItem[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [isLoadingProjects, setIsLoadingProjects] = useState(true);
     const [isDesktop, setIsDesktop] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
+    const [debouncedQuery, setDebouncedQuery] = useState("");
+
+    useEffect(() => {
+        const timer = setTimeout(() => setDebouncedQuery(searchQuery.trim()), SEARCH_DEBOUNCE_MS);
+        return () => clearTimeout(timer);
+    }, [searchQuery]);
+
+    const conversationsUrl =
+        `/api/conversations?limit=${SIDEBAR_CONVERSATION_LIMIT}` +
+        (debouncedQuery ? `&q=${encodeURIComponent(debouncedQuery)}` : "");
+
+    const { data: conversationData, loading: isLoading, refresh: fetchConversations, setData: setConversationData } =
+        useJsonResource<ConversationPage>(
+            conversationsUrl,
+            "Failed to fetch conversations",
+            `${pathname}#${listVersion}`
+        );
+    const { data: projectData, loading: isLoadingProjects, refresh: fetchProjects } =
+        useJsonResource<{ projects: ProjectSummary[] }>("/api/projects", "Failed to fetch projects", pathname);
+    const conversations = useMemo(() => conversationData?.conversations ?? [], [conversationData]);
+    const projects = projectData?.projects ?? [];
+    const setConversations = (update: (previous: Conversation[]) => Conversation[]) =>
+        setConversationData((current) => ({
+            // Spread first: a local archive/delete must keep nextCursor, or the
+            // truncation notice would silently vanish mid-list.
+            ...current,
+            conversations: update(current?.conversations ?? []),
+        }));
     const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
     const [newProjectName, setNewProjectName] = useState("");
+    const [newProjectColor, setNewProjectColor] = useState(DEFAULT_PROJECT_COLOR);
     const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<{ type: "conversation" | "project"; id: string } | null>(null);
+    const [renameTarget, setRenameTarget] = useState<{ id: string; title: string } | null>(null);
     const sidebarDefaultState = usePersonalizationStore((state) => state.sidebarDefaultState);
-
-    const fetchConversations = useCallback(async () => {
-        try {
-            const response = await fetch("/api/conversations");
-            if (response.ok) {
-                const data = await response.json();
-                setConversations(data.conversations || []);
-            }
-        } catch (error) {
-            console.error("Failed to fetch conversations:", error);
-        } finally {
-            setIsLoading(false);
-        }
-    }, []);
-
-    const fetchProjects = useCallback(async () => {
-        try {
-            const response = await fetch("/api/projects");
-            if (response.ok) {
-                const data = await response.json();
-                setProjects(data.projects || []);
-            }
-        } catch (error) {
-            console.error("Failed to fetch projects:", error);
-        } finally {
-            setIsLoadingProjects(false);
-        }
-    }, []);
 
     useEffect(() => {
         const mediaQuery = window.matchMedia("(min-width: 1024px)");
@@ -107,11 +225,6 @@ export function ConversationSidebar() {
             mediaQuery.removeEventListener("change", applyViewportMode);
         };
     }, [setSidebarOpen, sidebarDefaultState]);
-
-    useEffect(() => {
-        void fetchConversations();
-        void fetchProjects();
-    }, [fetchConversations, fetchProjects, pathname]);
 
     useEffect(() => {
         if (!isDesktop) {
@@ -142,14 +255,16 @@ export function ConversationSidebar() {
                 method: "DELETE",
             });
 
-            if (response.ok) {
-                setConversations((prev) => prev.filter((conversation) => conversation.id !== id));
-                if (conversationId === id) {
-                    clearMessages();
-                    router.push("/chat");
-                }
-                success("Conversation deleted");
+            if (!response.ok) {
+                throw new Error(`Delete rejected with ${response.status}`);
             }
+
+            setConversations((prev) => prev.filter((conversation) => conversation.id !== id));
+            if (conversationId === id) {
+                clearMessages();
+                router.push("/chat");
+            }
+            success("Conversation deleted");
         } catch (error) {
             console.error("Failed to delete conversation:", error);
             toastError("Delete failed");
@@ -169,14 +284,16 @@ export function ConversationSidebar() {
                 body: JSON.stringify({ archived: true }),
             });
 
-            if (response.ok) {
-                setConversations((prev) => prev.filter((conversation) => conversation.id !== id));
-                if (conversationId === id) {
-                    clearMessages();
-                    router.push("/chat");
-                }
-                success("Conversation archived");
+            if (!response.ok) {
+                throw new Error(`Archive rejected with ${response.status}`);
             }
+
+            setConversations((prev) => prev.filter((conversation) => conversation.id !== id));
+            if (conversationId === id) {
+                clearMessages();
+                router.push("/chat");
+            }
+            success("Conversation archived");
         } catch (error) {
             console.error("Failed to archive conversation:", error);
             toastError("Archive failed");
@@ -205,6 +322,7 @@ export function ConversationSidebar() {
 
     const handleCreateProject = () => {
         setNewProjectName("");
+        setNewProjectColor(DEFAULT_PROJECT_COLOR);
         setShowNewProjectDialog(true);
     };
 
@@ -218,7 +336,7 @@ export function ConversationSidebar() {
             const response = await fetch("/api/projects", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name }),
+                body: JSON.stringify({ name, color: newProjectColor }),
             });
 
             const data = await response.json();
@@ -229,10 +347,11 @@ export function ConversationSidebar() {
             await fetchProjects();
             setShowNewProjectDialog(false);
             setNewProjectName("");
+            setNewProjectColor(DEFAULT_PROJECT_COLOR);
             success("Project created");
         } catch (error) {
             console.error("Failed to create project:", error);
-            toastError("Project creation failed");
+            toastError("Project creation failed", failureDetail(error));
         }
     };
 
@@ -267,6 +386,21 @@ export function ConversationSidebar() {
         }
     };
 
+    const handleConfirmDelete = () => {
+        if (deleteConfirmDialog?.type === "conversation") {
+            confirmDeleteConversation();
+        } else {
+            confirmDeleteProject();
+        }
+    };
+
+    const handleExportConversation = (id: string, title: string) => {
+        void downloadConversationExport(id, title).catch((error: unknown) => {
+            console.error("Failed to export conversation:", error);
+            toastError("Export failed", error instanceof Error ? error.message : undefined);
+        });
+    };
+
     const closeMobileSidebar = () => {
         if (!isDesktop) {
             setSidebarOpen(false);
@@ -296,15 +430,26 @@ export function ConversationSidebar() {
                 <button
                     type="button"
                     aria-label="Close sidebar"
-                    className="fixed inset-0 z-30 bg-black/45 backdrop-blur-sm"
+                    className="fixed inset-0 z-30 bg-[var(--scrim)] backdrop-blur-sm"
                     onClick={() => setSidebarOpen(false)}
                 />
             ) : null}
 
             <aside
+                // Off-canvas is not enough: a translated sidebar stays in the
+                // tab order and the accessibility tree, so keyboard users walk
+                // through invisible controls. inert removes both at once.
+                inert={!isSidebarOpen}
                 className={cn(
-                    "glass-panel fixed inset-y-0 left-0 z-40 flex h-screen flex-col border-r border-[var(--sidebar-border)] bg-[var(--sidebar)] text-[var(--sidebar-foreground)] transition-all duration-300",
+                    "glass-panel fixed inset-y-0 left-0 z-40 flex h-dvh flex-col border-r border-[var(--sidebar-border)] text-[var(--sidebar-foreground)] transition-all duration-300",
                     "w-[min(88vw,22rem)]",
+                    // --glass-bg, not bg-*: glass-panel is unlayered CSS and
+                    // outranks any bg utility, so the surface is swapped by
+                    // variable. Below lg the drawer floats over a scrim and must
+                    // be solid (glass over a veil mixes both colours); the
+                    // desktop sidebar keeps its translucent surface.
+                    "[--glass-bg:var(--sidebar)]",
+                    "max-lg:[--glass-bg:var(--sidebar-solid)]",
                     isSidebarOpen ? "translate-x-0" : "-translate-x-full",
                     "lg:relative lg:z-0 lg:translate-x-0",
                     isSidebarOpen ? "lg:w-72" : "lg:w-0 lg:overflow-hidden"
@@ -312,7 +457,7 @@ export function ConversationSidebar() {
             >
                 <div className="flex h-20 items-center justify-between border-b border-[var(--sidebar-border)] px-4">
                     <Link href="/chat" className="flex items-center gap-3" onClick={closeMobileSidebar}>
-                        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/18 text-primary shadow-[0_0_40px_rgba(124,109,255,0.25)]">
+                        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/18 text-primary shadow-[0_0_40px_var(--shadow-primary)]">
                             <Sparkles className="h-5 w-5" />
                         </div>
                         <div className="space-y-0.5">
@@ -329,7 +474,8 @@ export function ConversationSidebar() {
                         variant="ghost"
                         size="icon"
                         onClick={toggleSidebar}
-                        className="h-9 w-9 rounded-full border border-border/60 bg-background/40"
+                        aria-label={isSidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+                        className="h-11 w-11 shrink-0 rounded-full border border-border/60 bg-background/40"
                     >
                         {isSidebarOpen ? (
                             <PanelLeftClose className="h-4 w-4" />
@@ -342,7 +488,7 @@ export function ConversationSidebar() {
                 <div className="space-y-3 p-3">
                     <Button
                         onClick={handleNewChat}
-                        className="w-full justify-start gap-2 rounded-2xl border-0 bg-primary py-6 text-primary-foreground shadow-[0_16px_40px_rgba(124,109,255,0.22)]"
+                        className="w-full justify-start gap-2 rounded-2xl border-0 bg-primary py-6 text-primary-foreground shadow-[0_16px_40px_var(--shadow-primary)]"
                     >
                         <Plus className="h-4 w-4" />
                         New Conversation
@@ -365,66 +511,22 @@ export function ConversationSidebar() {
                             className="h-11 rounded-2xl border-border/70 bg-background/40 pl-9"
                         />
                     </div>
+
+                    {scopeCaption(!!conversationData?.nextCursor, searchQuery)}
                 </div>
 
                 <Separator />
 
                 <ScrollArea className="flex-1">
                     <div className="space-y-3 p-3">
-                        <div className="space-y-2">
-                            <div className="flex items-center justify-between px-1">
-                                <div className="section-kicker">Projects</div>
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-7 w-7 rounded-full"
-                                    onClick={handleCreateProject}
-                                >
-                                    <FolderPlus className="h-3.5 w-3.5" />
-                                </Button>
-                            </div>
-                            <Button
-                                variant={activeProjectId ? "ghost" : "secondary"}
-                                className="w-full justify-start rounded-2xl"
-                                onClick={() => setActiveProjectId(null)}
-                            >
-                                All chats
-                            </Button>
-                            {isLoadingProjects ? (
-                                <div className="px-2 py-2 text-xs text-muted-foreground">Loading projects...</div>
-                            ) : projects.length === 0 ? (
-                                <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-background/20 p-3 text-xs text-muted-foreground">
-                                    No projects yet.
-                                </div>
-                            ) : (
-                                projects.map((project) => (
-                                    <div key={project.id} className="flex items-center gap-2">
-                                        <Button
-                                            variant={activeProjectId === project.id ? "secondary" : "ghost"}
-                                            className="min-w-0 flex-1 justify-start rounded-2xl"
-                                            onClick={() => setActiveProjectId(project.id)}
-                                        >
-                                            <span
-                                                className="mr-2 h-2.5 w-2.5 rounded-full"
-                                                style={{ backgroundColor: project.color || "#7c6dff" }}
-                                            />
-                                            <span className="truncate">{project.name}</span>
-                                            <span className="ml-2 text-xs text-muted-foreground">
-                                                {project._count?.conversations ?? 0}
-                                            </span>
-                                        </Button>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-8 w-8 rounded-full"
-                                            onClick={() => handleDeleteProject(project.id)}
-                                        >
-                                            <span className="text-xs">x</span>
-                                        </Button>
-                                    </div>
-                                ))
-                            )}
-                        </div>
+                        <ProjectList
+                            projects={projects}
+                            activeProjectId={activeProjectId}
+                            isLoading={isLoadingProjects}
+                            onCreate={handleCreateProject}
+                            onSelect={setActiveProjectId}
+                            onDelete={handleDeleteProject}
+                        />
 
                         <Separator />
                         <div className="section-kicker px-1">Recent chats</div>
@@ -436,131 +538,124 @@ export function ConversationSidebar() {
                             onAssignProject={handleAssignProject}
                             onArchive={handleArchiveConversation}
                             onDelete={handleDeleteConversation}
+                            onExport={handleExportConversation}
+                            onRename={(id, title) => setRenameTarget({ id, title })}
                             onSelect={closeMobileSidebar}
+                            emptyMessage={conversationListHint(searchQuery)}
                         />
-                        {!isLoading && searchQuery.trim() && filteredConversations.length === 0 ? (
-                            <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-background/20 p-4 text-sm text-muted-foreground">
-                                No chats match &quot;{searchQuery}&quot;.
-                            </div>
-                        ) : null}
                     </div>
                 </ScrollArea>
 
                 <Separator />
 
                 <div className="p-3">
-                    <Link href="/settings/preferences" onClick={closeMobileSidebar}>
-                        <Button
-                            variant="ghost"
-                            className="w-full justify-start gap-2 rounded-2xl border border-border/70 bg-background/30 py-6"
-                        >
+                    <Button
+                        asChild
+                        variant="ghost"
+                        className="w-full justify-start gap-2 rounded-2xl border border-border/70 bg-background/30 py-6"
+                    >
+                        <Link href="/settings/preferences" onClick={closeMobileSidebar}>
                             <Settings className="h-4 w-4" />
                             Settings & Personalization
-                        </Button>
-                    </Link>
+                        </Link>
+                    </Button>
                 </div>
             </aside>
 
             {/* New Project Dialog */}
-            {showNewProjectDialog && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center">
-                    <button
-                        type="button"
-                        aria-label="Close dialog"
-                        className="absolute inset-0 bg-black/45 backdrop-blur-sm"
-                        onClick={() => setShowNewProjectDialog(false)}
+            <Modal
+                open={showNewProjectDialog}
+                title="New Project"
+                showCloseButton
+                onClose={() => setShowNewProjectDialog(false)}
+            >
+                <div className="space-y-4">
+                    <Input
+                        value={newProjectName}
+                        onChange={(e) => setNewProjectName(e.target.value)}
+                        placeholder="Project name"
+                        className="h-11 rounded-xl"
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                                handleCreateProjectSubmit();
+                            }
+                        }}
+                        autoFocus
                     />
-                    <div className="glass-panel relative z-10 w-[90%] max-w-sm rounded-2xl border border-border/70 p-6 shadow-[0_28px_120px_rgba(0,0,0,0.32)]">
-                        <div className="mb-4 flex items-center justify-between">
-                            <h3 className="text-lg font-semibold">New Project</h3>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 rounded-full"
-                                onClick={() => setShowNewProjectDialog(false)}
-                            >
-                                <X className="h-4 w-4" />
-                            </Button>
-                        </div>
-                        <div className="space-y-4">
-                            <Input
-                                value={newProjectName}
-                                onChange={(e) => setNewProjectName(e.target.value)}
-                                placeholder="Project name"
-                                className="h-11 rounded-xl"
-                                onKeyDown={(e) => {
-                                    if (e.key === "Enter") {
-                                        handleCreateProjectSubmit();
-                                    }
-                                }}
-                                autoFocus
-                            />
-                            <div className="flex gap-2">
-                                <Button
-                                    variant="ghost"
-                                    className="flex-1 rounded-xl"
-                                    onClick={() => setShowNewProjectDialog(false)}
-                                >
-                                    Cancel
-                                </Button>
-                                <Button
-                                    className="flex-1 rounded-xl"
-                                    onClick={handleCreateProjectSubmit}
-                                    disabled={!newProjectName.trim()}
-                                >
-                                    Create
-                                </Button>
-                            </div>
-                        </div>
+                    <ProjectColorField value={newProjectColor} onChange={setNewProjectColor} />
+                    <div className="flex gap-2">
+                        <Button
+                            variant="ghost"
+                            className="flex-1 rounded-xl"
+                            onClick={() => setShowNewProjectDialog(false)}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            className="flex-1 rounded-xl"
+                            onClick={handleCreateProjectSubmit}
+                            disabled={!newProjectName.trim()}
+                        >
+                            Create
+                        </Button>
                     </div>
                 </div>
-            )}
+            </Modal>
 
             {/* Delete Confirmation Dialog */}
-            {deleteConfirmDialog && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center">
-                    <button
-                        type="button"
-                        aria-label="Close dialog"
-                        className="absolute inset-0 bg-black/45 backdrop-blur-sm"
+            <Modal
+                open={!!deleteConfirmDialog}
+                title={deleteConfirmDialog?.type === "conversation" ? "Delete Conversation" : "Delete Project"}
+                showCloseButton
+                onClose={() => setDeleteConfirmDialog(null)}
+            >
+                <p className="mb-6 text-sm text-muted-foreground">
+                    {deleteConfirmDialog?.type === "conversation"
+                        ? "Are you sure you want to delete this conversation? This action cannot be undone."
+                        : "Delete this project? Conversations will remain and be unassigned."}
+                </p>
+                <div className="flex gap-2">
+                    <Button
+                        variant="ghost"
+                        className="flex-1 rounded-xl"
                         onClick={() => setDeleteConfirmDialog(null)}
-                    />
-                    <div className="glass-panel relative z-10 w-[90%] max-w-sm rounded-2xl border border-border/70 p-6 shadow-[0_28px_120px_rgba(0,0,0,0.32)]">
-                        <div className="mb-4">
-                            <h3 className="text-lg font-semibold">
-                                {deleteConfirmDialog.type === "conversation" ? "Delete Conversation" : "Delete Project"}
-                            </h3>
-                        </div>
-                        <p className="mb-6 text-sm text-muted-foreground">
-                            {deleteConfirmDialog.type === "conversation"
-                                ? "Are you sure you want to delete this conversation? This action cannot be undone."
-                                : "Delete this project? Conversations will remain and be unassigned."}
-                        </p>
-                        <div className="flex gap-2">
-                            <Button
-                                variant="ghost"
-                                className="flex-1 rounded-xl"
-                                onClick={() => setDeleteConfirmDialog(null)}
-                            >
-                                Cancel
-                            </Button>
-                            <Button
-                                variant="destructive"
-                                className="flex-1 rounded-xl"
-                                onClick={() => {
-                                    if (deleteConfirmDialog.type === "conversation") {
-                                        confirmDeleteConversation();
-                                    } else {
-                                        confirmDeleteProject();
-                                    }
-                                }}
-                            >
-                                Delete
-                            </Button>
-                        </div>
-                    </div>
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        variant="destructive"
+                        className="flex-1 rounded-xl"
+                        onClick={handleConfirmDelete}
+                    >
+                        Delete
+                    </Button>
                 </div>
-            )}
+            </Modal>
+
+            {/* Rename Conversation Dialog */}
+            {renameTarget ? (
+                <RenameConversationDialog
+                    key={renameTarget.id}
+                    conversation={renameTarget}
+                    onClose={() => setRenameTarget(null)}
+                    onRenamed={(name) => {
+                        setRenameTarget(null);
+                        // The open thread shows the store title, not the list
+                        // row: without this the header keeps the old name until
+                        // the next load.
+                        if (conversationId === renameTarget.id) {
+                            setConversationTitle(name);
+                        }
+                        setConversations((prev) =>
+                            prev.map((conversation) =>
+                                conversation.id === renameTarget.id
+                                    ? { ...conversation, title: name }
+                                    : conversation
+                            )
+                        );
+                    }}
+                />
+            ) : null}
         </>
     );
 }

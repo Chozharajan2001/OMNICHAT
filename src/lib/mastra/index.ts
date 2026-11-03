@@ -9,8 +9,10 @@
 // ────────────────────────────────────────────────────────────────
 
 import { generateText, LanguageModel } from "ai";
+import { KEY_VALIDATION_MAX_TOKENS, KEY_VALIDATION_TIMEOUT_MS } from "@/lib/constants";
 
 import { createOpenAI } from "@ai-sdk/openai";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createMistral } from "@ai-sdk/mistral";
@@ -38,6 +40,11 @@ const PROVIDER_FACTORIES: Record<string, ProviderFactory> = {
     xai: (apiKey) => createXai({ apiKey }),
     deepseek: (apiKey) => createDeepSeek({ apiKey }),
     perplexity: (apiKey) => createPerplexity({ apiKey }),
+    "nvidia-nim": (apiKey) => createOpenAICompatible({
+        name: "nvidia-nim",
+        apiKey,
+        baseURL: "https://integrate.api.nvidia.com/v1",
+    }),
 };
 
 /* ────────────────────────────────────────────────────────────────
@@ -94,10 +101,14 @@ export async function validateApiKey(
         const model = createLanguageModel(providerId, targetModel.id, apiKey);
 
         // Perform a tiny generate (no streaming) to verify credentials.
-        // We use a minimal prompt to minimise cost and latency.
+        // Bounded on purpose: this runs against someone's paid quota, and a
+        // hung provider would otherwise hold the request open. An aborted call
+        // lands in the catch below and reads as "not confirmed".
         await generateText({
             model,
             prompt: "Say 'ok'",
+            maxOutputTokens: KEY_VALIDATION_MAX_TOKENS,
+            abortSignal: AbortSignal.timeout(KEY_VALIDATION_TIMEOUT_MS),
         });
 
         return true;
@@ -106,6 +117,10 @@ export async function validateApiKey(
         if (process.env.NODE_ENV === "development") {
             const errorMessage = error instanceof Error ? error.message : "Unknown error";
             console.warn(`API key validation failed for ${providerId}:`, errorMessage);
+            // Log more details for debugging
+            if (error instanceof Error && 'cause' in error) {
+                console.warn('Error cause:', error.cause);
+            }
         }
         return false;
     }

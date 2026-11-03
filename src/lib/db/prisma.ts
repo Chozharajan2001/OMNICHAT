@@ -1,15 +1,15 @@
 import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
-import { Pool } from "pg";
 
 declare global {
     var __prisma: PrismaClient | undefined;
-    var __prismaPool: Pool | undefined;
 }
 
 function isSqliteUrl(url: string) {
-    return url.startsWith("file:") || url.includes(".db") || url.includes(".sqlite");
+    // Scheme-based: a postgres host may legitimately contain ".db" (e.g. k8s DNS),
+    // so only the "file:" protocol means SQLite.
+    return url.startsWith("file:");
 }
 
 function createPrismaClient() {
@@ -20,12 +20,8 @@ function createPrismaClient() {
         return new PrismaClient({ adapter });
     }
 
-    const pool = globalThis.__prismaPool ?? new Pool({ connectionString: databaseUrl });
-    if (process.env.NODE_ENV !== "production") {
-        globalThis.__prismaPool = pool;
-    }
-
-    const adapter = new PrismaPg(pool);
+    // PostgreSQL (server deployments): driver adapter, same construction shape as SQLite.
+    const adapter = new PrismaPg({ connectionString: databaseUrl });
     return new PrismaClient({ adapter });
 }
 

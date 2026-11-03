@@ -1,0 +1,112 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { existsSync, readFileSync } from "node:fs";
+import { unstable_doesMiddlewareMatch } from "next/experimental/testing/server";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import proxy, { config } from "../proxy";
+import RegisterPage from "@/app/(auth)/register/page";
+import VerifyEmailPage from "@/app/(auth)/verify-email/page";
+
+// Inspect real Next.js matching and public page rendering without auth or DB I/O.
+vi.mock("@/lib/auth/config", () => ({ auth: vi.fn((handler) => handler) }));
+
+function matches(url: string) {
+    return unstable_doesMiddlewareMatch({ config, nextConfig: {}, url });
+}
+const handle = proxy as unknown as (request: {
+    nextUrl: URL; auth: { user: { id: string } } | null;
+}) => Response | undefined;
+
+afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
+
+describe("guard placement (Next 16 loads it only from src/)", () => {
+    // A root-level middleware.ts still COMPILES while registering nothing, so a
+    // misplaced guard fails silently: every page becomes reachable without a
+    // session. These assertions make that failure mode loud instead.
+    const root = new URL("../../", import.meta.url);
+
+    it("lives at src/proxy.ts, not the retired root middleware.ts", () => {
+        expect(() => readFileSync(new URL("src/proxy.ts", root), "utf8")).not.toThrow();
+        expect(existsSync(new URL("middleware.ts", root))).toBe(false);
+    });
+
+    it("declares no runtime, which a proxy rejects", () => {
+        const source = readFileSync(new URL("src/proxy.ts", root), "utf8");
+        expect(config.matcher).toBeInstanceOf(Array);
+        expect(config).not.toHaveProperty("runtime");
+        expect(source).not.toContain('runtime: "nodejs"');
+    });
+});
+
+describe("readiness and metrics endpoint guard matching", () => {
+    it.each(["/api/health", "/api/health?probe=1", "/api/metrics", "/api/metrics?format=prom"])("allows unauthenticated probes at %s", (url) => {
+        expect(matches(url)).toBe(false);
+    });
+
+    // /api/metrics is exempted by exact match only; the bearer token in the route
+    // is the sole gate, so near-miss paths must stay session-protected.
+    it.each([
+        "/api/health/details", "/api/health-admin", "/api/providers",
+        "/api/conversations", "/api/chat", "/api/projects", "/settings/account", "/api/auth-extra",
+        "/api/metrics/details", "/api/metrics-admin", "/api/metricss",
+    ])("retains authentication for %s", (url) => {
+        expect(matches(url)).toBe(true);
+    });
+});
+
+describe("metadata and brand assets are reachable without a session", () => {
+    // A crawler previewing a link, or an install prompt fetching the manifest,
+    // has no session; bouncing them to /login makes the whole M-8 metadata
+    // effort inert. None of these carry user data.
+    it.each([
+        "/robots.txt", "/manifest.webmanifest", "/og.png", "/icon.svg", "/apple-icon.png", "/favicon.ico",
+    ])("allows %s", (url) => {
+        expect(matches(url)).toBe(false);
+    });
+
+    // The exemptions are path-final: a prefix collision must not open a door.
+    it.each(["/og.png/secret", "/robots.txt/../../etc", "/icon.svgx", "/manifest.webmanifest/api"])
+        ("retains authentication for %s", (url) => {
+            expect(matches(url)).toBe(true);
+        });
+});
+
+describe("public authentication pages", () => {
+    it.each(["/login", "/register", "/verify-email", "/verify-email/", "/verify-email#token=secret"])("permits unauthenticated access to %s", (path) => {
+        expect(handle({ nextUrl: new URL(path, "https://chat.example.com"), auth: null })).toBeUndefined();
+    });
+
+    it.each(["/login-extra", "/register/private", "/verify-email/private", "/chat", "/settings/account"])("does not broaden public access to %s", (path) => {
+        const response = handle({ nextUrl: new URL(path, "https://chat.example.com"), auth: null });
+        expect(response?.headers.get("location")).toBe("https://chat.example.com/login");
+    });
+
+    it("returns JSON 401 for protected APIs rather than a login redirect", async () => {
+        const response = handle({ nextUrl: new URL("https://chat.example.com/api/chat"), auth: null });
+        expect(response?.status).toBe(401);
+        expect(await response?.json()).toEqual({ error: "Unauthorized" });
+    });
+
+    it("allows authenticated requests after the JWT verification gate", () => {
+        expect(handle({ nextUrl: new URL("https://chat.example.com/chat"), auth: { user: { id: "u1" } } })).toBeUndefined();
+    });
+
+    it("renders registration and explicit confirmation without sending or consuming on GET", () => {
+        vi.stubEnv("EMAIL_VERIFICATION_REQUIRED", "true");
+        const fetchMock = vi.fn();
+        vi.stubGlobal("fetch", fetchMock);
+        expect(renderToStaticMarkup(createElement(RegisterPage))).toContain("Create account");
+        const confirmation = renderToStaticMarkup(createElement(VerifyEmailPage));
+        expect(confirmation).toContain("Confirm email");
+        expect(confirmation).toContain("Send verification email");
+        expect(confirmation).not.toContain("token=");
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("shows the local/offline exemption without hosted forms when disabled", () => {
+        vi.stubEnv("EMAIL_VERIFICATION_REQUIRED", "false");
+        const page = renderToStaticMarkup(createElement(RegisterPage));
+        expect(page).toContain("not enabled");
+        expect(page).not.toContain("<form");
+    });
+});

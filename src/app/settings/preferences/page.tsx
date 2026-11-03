@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { usePreferences } from "@/hooks/usePreferences";
+import { DEFAULT_USER_PREFERENCES, DEFAULT_WELCOME_MESSAGE } from "@/lib/constants";
+import type { UserPreference } from "@/types";
 import {
     type AppLanguage,
     usePersonalizationStore,
@@ -14,17 +16,147 @@ import {
     type ModelDefinition,
 } from "@/lib/mastra/providers";
 import { Button } from "@/components/ui/button";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { Check, Keyboard, Languages, LayoutPanelLeft, Paintbrush, Rows3, Save, Sparkles } from "lucide-react";
+import { AlertCircle, Check, Keyboard, Languages, LayoutPanelLeft, Paintbrush, Rows3, Save, Sparkles } from "lucide-react";
 
+// The choice is not a translation: it sets <html lang> and data-language in
+// ThemeController, which is what screen readers and hyphenation use. Saying so
+// beats the previous note, which promised a localisation that does not exist.
 const LANGUAGE_OPTIONS: { value: AppLanguage; label: string; note: string }[] = [
-    { value: "en-US", label: "English (US)", note: "Default product language" },
-    { value: "en-GB", label: "English (UK)", note: "Alternative English locale" },
-    { value: "ta-IN", label: "Tamil (India)", note: "Preference saved for future localization" },
+    { value: "en-US", label: "English (US)", note: "Document language for assistive tech" },
+    { value: "en-GB", label: "English (UK)", note: "Same strings, British document language" },
+    { value: "ta-IN", label: "Tamil (India)", note: "Read and hyphenated as Tamil; interface strings stay English" },
 ];
+
+// The page component had reached its complexity budget, so the unsaved-changes
+// comparison lives in module scope: two values are rendered as one canonical
+// string and compared, which keeps every branch out of the component.
+interface FormValues {
+    providerId: string;
+    modelId: string;
+    systemPrompt: string;
+    theme: string;
+    sendWithEnter: boolean;
+    showTokenCount: boolean;
+    welcome: string;
+}
+
+function valuesSignature(values: FormValues): string {
+    return JSON.stringify(values);
+}
+
+/**
+ * A stored model that no longer resolves -- a column left empty, or an id that
+ * has since gone out of the registry -- is displayed as the registry default,
+ * never as a blank field. Both the form and the saved signature go through here:
+ * comparing the raw column against this derived value reported "Unsaved changes"
+ * on every mount for such a row, with Save live and nothing touched.
+ */
+function resolveModelSelection(providerId: string, storedModelId: string): string {
+    const models = getProvider(providerId)?.models || [];
+    return models.find((model) => model.id === storedModelId)?.id
+        ?? models.find((model) => model.isDefault)?.id
+        ?? models[0]?.id
+        ?? "";
+}
+
+function savedSignatureOf(initial: PreferenceValues, welcome: string): string {
+    const providerId = initial.defaultProviderId || "openai";
+    return valuesSignature({
+        providerId,
+        modelId: resolveModelSelection(providerId, initial.defaultModelId || ""),
+        systemPrompt: initial.defaultSystemPrompt ?? "",
+        theme: initial.theme,
+        sendWithEnter: initial.sendWithEnter ?? true,
+        showTokenCount: initial.showTokenCount ?? false,
+        welcome,
+    });
+}
+
+interface HeaderProps {
+    isDirty: boolean;
+    isSaving: boolean;
+    onSave: () => void;
+}
+
+function PreferencesHeader({ isDirty, isSaving, onSave }: HeaderProps) {
+    return (
+        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div>
+                <div className="section-kicker mb-3">General</div>
+                <h2 className="text-4xl font-semibold tracking-tight">Personalize your desk</h2>
+                <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
+                    Choose the default model behavior, shape your writing style, and make the
+                    workspace feel like your own every time you open it.
+                </p>
+            </div>
+            <div className="flex items-center gap-3">
+                {/* The confirmation card at the foot of the form says a save
+                    happened; nothing said when it had not. */}
+                {isDirty ? (
+                    <span className="text-sm text-muted-foreground">Unsaved changes</span>
+                ) : null}
+                <Button
+                    onClick={onSave}
+                    disabled={!isDirty || isSaving}
+                    className="rounded-full px-5 shadow-[0_16px_30px_var(--shadow-primary)]"
+                >
+                    <Save className="h-4 w-4" />
+                    {isSaving ? "Saving..." : "Save preferences"}
+                </Button>
+            </div>
+        </div>
+    );
+}
 
 export default function PreferencesPage() {
     const { preferences, loading, error, updatePreferences } = usePreferences();
+    if (loading) {
+        return (
+            <div role="status" aria-live="polite" className="space-y-4">
+                <p className="sr-only">Loading preferences</p>
+                <Skeleton className="h-9 w-64" />
+                <Skeleton className="h-40 w-full rounded-[1.75rem]" />
+                <Skeleton className="h-40 w-full rounded-[1.75rem]" />
+            </div>
+        );
+    }
+    if (error) {
+        return (
+            <div role="alert" className="flex items-start gap-3 rounded-2xl border border-destructive/40 bg-destructive/10 p-6 text-sm text-destructive">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                <span>{error}</span>
+            </div>
+        );
+    }
+    // A new account legitimately has no preferences row yet (GET returns
+    // { preferences: null }). That is not an error: rendering the defaults is the
+    // only way to reach the first save, which creates the row.
+    return (
+        <PreferencesForm
+            initialPreferences={preferences ?? DEFAULT_USER_PREFERENCES}
+            updatePreferences={updatePreferences}
+        />
+    );
+}
+
+type PreferenceValues = Pick<
+    UserPreference,
+    "defaultProviderId" | "defaultModelId" | "defaultSystemPrompt" | "theme" | "sendWithEnter" | "showTokenCount"
+>;
+
+function PreferencesForm({ initialPreferences, updatePreferences }: {
+    initialPreferences: PreferenceValues;
+    updatePreferences: ReturnType<typeof usePreferences>["updatePreferences"];
+}) {
     const {
         language,
         chatDensity,
@@ -36,55 +168,52 @@ export default function PreferencesPage() {
         setWelcomeMessage,
     } = usePersonalizationStore();
 
-    const [providerId, setProviderId] = useState("openai");
-    const [modelId, setModelId] = useState("");
-    const [defaultSystemPrompt, setDefaultSystemPrompt] = useState("");
-    const [theme, setTheme] = useState<"light" | "dark" | "system">("dark");
-    const [sendWithEnter, setSendWithEnter] = useState(true);
-    const [showTokenCount, setShowTokenCount] = useState(false);
-    const [isInitialized, setIsInitialized] = useState(false);
+    // Mount only after loading; edits are not overwritten by later save responses.
+    const [providerId, setProviderId] = useState(initialPreferences.defaultProviderId || "openai");
+    const [selectedModelId, setModelId] = useState(initialPreferences.defaultModelId || "");
+    const [defaultSystemPrompt, setDefaultSystemPrompt] = useState(initialPreferences.defaultSystemPrompt ?? "");
+    const [theme, setTheme] = useState(initialPreferences.theme as "light" | "dark" | "system");
+    const [sendWithEnter, setSendWithEnter] = useState(initialPreferences.sendWithEnter ?? true);
+    const [showTokenCount, setShowTokenCount] = useState(initialPreferences.showTokenCount ?? false);
     const [isSaving, setIsSaving] = useState(false);
     const [saveMessage, setSaveMessage] = useState<string | null>(null);
-    const [localWelcomeMessage, setLocalWelcomeMessage] = useState(welcomeMessage);
-
-    useEffect(() => {
-        if (preferences && !isInitialized) {
-            setProviderId(preferences.defaultProviderId || "openai");
-            setModelId(preferences.defaultModelId || "");
-            setDefaultSystemPrompt(preferences.defaultSystemPrompt ?? "");
-            setTheme(preferences.theme as "light" | "dark" | "system");
-            setSendWithEnter(preferences.sendWithEnter ?? true);
-            setShowTokenCount(preferences.showTokenCount ?? false);
-            setIsInitialized(true);
-        }
-    }, [preferences, isInitialized]);
-
-    useEffect(() => {
-        setLocalWelcomeMessage(welcomeMessage);
-    }, [welcomeMessage]);
+    const [welcomeDraft, setLocalWelcomeMessage] = useState<string | null>(null);
+    const localWelcomeMessage = welcomeDraft ?? welcomeMessage;
 
     const availableModels = useMemo<ModelDefinition[]>(() => {
         const provider = getProvider(providerId);
         return provider?.models || [];
     }, [providerId]);
+    const modelId = resolveModelSelection(providerId, selectedModelId);
+
+    const savedValues = useMemo(
+        () => savedSignatureOf(initialPreferences, welcomeMessage),
+        [initialPreferences, welcomeMessage]
+    );
+    // Both sides run through resolveModelSelection, so a stored default that no
+    // longer resolves reads as the registry default it is displayed as -- clean,
+    // and corrected only when the user actually changes something.
+    const isDirty = valuesSignature({
+        providerId,
+        modelId,
+        systemPrompt: defaultSystemPrompt,
+        theme,
+        sendWithEnter,
+        showTokenCount,
+        welcome: localWelcomeMessage,
+    }) !== savedValues;
 
     useEffect(() => {
-        if (availableModels.length > 0 && !availableModels.find((m) => m.id === modelId)) {
-            const nextModel = availableModels.find((m) => m.isDefault) || availableModels[0];
-            setModelId((current) => (current !== nextModel.id ? nextModel.id : current));
-        }
-    }, [availableModels, modelId]);
-
-    useEffect(() => {
-        const resolvedTheme =
-            theme === "system"
-                ? window.matchMedia("(prefers-color-scheme: dark)").matches
-                    ? "dark"
-                    : "light"
+        const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+        const applyTheme = () => {
+            document.documentElement.dataset.theme = theme === "system"
+                ? (mediaQuery.matches ? "dark" : "light")
                 : theme;
-
-        document.documentElement.dataset.theme = resolvedTheme;
+        };
+        applyTheme();
         window.localStorage.setItem("omnichat-theme", theme);
+        mediaQuery.addEventListener("change", applyTheme);
+        return () => mediaQuery.removeEventListener("change", applyTheme);
     }, [theme]);
 
     const handleSave = async () => {
@@ -100,41 +229,26 @@ export default function PreferencesPage() {
                 sendWithEnter,
                 showTokenCount,
             });
-            setWelcomeMessage(localWelcomeMessage.trim() || "What do you want to build, compare, or figure out today?");
+            // The server row is the authoritative half and has already landed; a
+            // cleared greeting is stored as empty rather than being repopulated
+            // with the default, which is applied where it is read.
+            setWelcomeMessage(localWelcomeMessage.trim());
+            setLocalWelcomeMessage((current) => current === localWelcomeMessage ? null : current);
             setSaveMessage("Preferences updated");
+        } catch (cause) {
+            setSaveMessage(cause instanceof Error ? cause.message : "Failed to save preferences");
         } finally {
             setIsSaving(false);
         }
     };
 
-    if (loading) {
-        return <p className="text-sm text-muted-foreground">Loading preferences...</p>;
-    }
-
-    if (error) {
-        return <p className="text-sm text-destructive">Error: {error}</p>;
-    }
-
     return (
         <div className="space-y-8">
-            <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-                <div>
-                    <div className="section-kicker mb-3">General</div>
-                    <h2 className="text-4xl font-semibold tracking-tight">Personalize your desk</h2>
-                    <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
-                        Choose the default model behavior, shape your writing style, and make the
-                        workspace feel like your own every time you open it.
-                    </p>
-                </div>
-                <Button
-                    onClick={handleSave}
-                    disabled={isSaving}
-                    className="rounded-full px-5 shadow-[0_16px_30px_rgba(124,109,255,0.22)]"
-                >
-                    <Save className="h-4 w-4" />
-                    {isSaving ? "Saving..." : "Save preferences"}
-                </Button>
-            </div>
+            <PreferencesHeader
+                isDirty={isDirty}
+                isSaving={isSaving}
+                onSave={handleSave}
+            />
 
             <section className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.9fr)]">
                 <div className="space-y-6">
@@ -152,35 +266,55 @@ export default function PreferencesPage() {
                         </div>
 
                         <div className="grid gap-4 md:grid-cols-2">
-                            <label className="space-y-2">
-                                <span className="text-sm font-medium">Provider</span>
-                                <select
+                            <div className="space-y-2">
+                                <div className="text-sm font-medium" id="default-provider-label">
+                                    Provider
+                                </div>
+                                <Select
                                     value={providerId}
-                                    onChange={(e) => setProviderId(e.target.value)}
-                                    className="flex h-12 w-full rounded-2xl border border-input bg-background/60 px-4 text-sm"
+                                    onValueChange={setProviderId}
                                 >
-                                    {SUPPORTED_PROVIDERS.map((provider) => (
-                                        <option key={provider.id} value={provider.id}>
-                                            {provider.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </label>
+                                    <SelectTrigger
+                                        id="default-provider"
+                                        aria-labelledby="default-provider-label"
+                                        className="h-12 w-full rounded-2xl border-input bg-background/60 px-4"
+                                    >
+                                        <SelectValue placeholder="Select a provider" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {SUPPORTED_PROVIDERS.map((provider) => (
+                                            <SelectItem key={provider.id} value={provider.id}>
+                                                {provider.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
 
-                            <label className="space-y-2">
-                                <span className="text-sm font-medium">Model</span>
-                                <select
+                            <div className="space-y-2">
+                                <div className="text-sm font-medium" id="default-model-label">
+                                    Model
+                                </div>
+                                <Select
                                     value={modelId}
-                                    onChange={(e) => setModelId(e.target.value)}
-                                    className="flex h-12 w-full rounded-2xl border border-input bg-background/60 px-4 text-sm"
+                                    onValueChange={setModelId}
                                 >
-                                    {availableModels.map((model) => (
-                                        <option key={model.id} value={model.id}>
-                                            {model.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </label>
+                                    <SelectTrigger
+                                        id="default-model"
+                                        aria-labelledby="default-model-label"
+                                        className="h-12 w-full rounded-2xl border-input bg-background/60 px-4"
+                                    >
+                                        <SelectValue placeholder="Select a model" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {availableModels.map((model) => (
+                                            <SelectItem key={model.id} value={model.id}>
+                                                {model.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
                         </div>
                     </div>
 
@@ -201,8 +335,12 @@ export default function PreferencesPage() {
                             <div>
                                 <div className="mb-3 flex items-center gap-2 text-sm font-medium">
                                     <Languages className="h-4 w-4 text-primary" />
-                                    Language
+                                    Document language
                                 </div>
+                                <p className="mb-3 text-xs leading-5 text-muted-foreground">
+                                    Sets the document language for assistive technology and
+                                    hyphenation. Interface text stays English.
+                                </p>
                                 <div className="grid gap-2 rounded-[1.25rem] border border-border/70 bg-background/40 p-2">
                                     {LANGUAGE_OPTIONS.map((option) => (
                                         <button
@@ -217,7 +355,7 @@ export default function PreferencesPage() {
                                         >
                                             <div>
                                                 <div className="font-medium">{option.label}</div>
-                                                <div className={`text-xs ${language === option.value ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
+                                                <div className={`text-xs ${language === option.value ? "text-primary-foreground" : "text-muted-foreground"}`}>
                                                     {option.note}
                                                 </div>
                                             </div>
@@ -373,14 +511,15 @@ export default function PreferencesPage() {
                     <div className="rounded-[1.75rem] border border-border/70 bg-background/30 p-6">
                         <div className="mb-4 text-lg font-semibold">Welcome message</div>
                         <p className="mb-4 text-sm leading-6 text-muted-foreground">
-                            Set the first line you want to see in the empty chat state.
+                            Set the first line you want to see in the empty chat state. Leave it
+                            empty and the standard greeting is shown.
                         </p>
                         <Textarea
                             value={localWelcomeMessage}
                             onChange={(e) => setLocalWelcomeMessage(e.target.value)}
                             rows={4}
                             className="rounded-[1.5rem] border border-input bg-background/60 p-4"
-                            placeholder="What do you want to build, compare, or figure out today?"
+                            placeholder={DEFAULT_WELCOME_MESSAGE}
                         />
                     </div>
 
@@ -388,7 +527,7 @@ export default function PreferencesPage() {
                         <div className="mb-4 text-lg font-semibold">Current profile</div>
                         <div className="space-y-3 text-sm">
                             <div className="flex items-center justify-between rounded-2xl bg-background/30 px-4 py-3">
-                                <span className="text-muted-foreground">Language</span>
+                                <span className="text-muted-foreground">Document language</span>
                                 <span className="font-medium">
                                     {LANGUAGE_OPTIONS.find((option) => option.value === language)?.label || language}
                                 </span>

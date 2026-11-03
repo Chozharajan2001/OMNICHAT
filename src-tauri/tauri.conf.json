@@ -7,7 +7,7 @@
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:3000",
     "beforeBuildCommand": "pnpm build",
-    "frontendDist": "../.next"
+    "frontendDist": "../public"
   },
   "app": {
     "withGlobalTauri": true,
@@ -25,7 +25,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
     }
   },
   "bundle": {
@@ -47,7 +47,9 @@
       },
       "nsis": {
         "installMode": "currentUser",
-        "languages": ["English"],
+        "languages": [
+          "English"
+        ],
         "displayLanguageSelector": false
       }
     },
@@ -63,22 +65,13 @@
       }
     },
     "resources": {
-      "../.next/standalone/**": "./",
-      "../.next/static/**": "./.next/static",
-      "../public/**": "./public",
-      "../node_modules/**": "./node_modules"
+      "./staging": "./",
+      "../public": "./public"
     }
   },
   "plugins": {
-    "fs": {
-      "scope": {
-        "allow": ["$APPDATA/**", "$DOCUMENT/**", "$DOWNLOAD/**", "$LOCALDATA/**"],
-        "deny": []
-      }
-    },
     "shell": {
-      "open": true,
-      "scope": []
+      "open": false
     }
   }
 }

@@ -31,6 +31,17 @@ export interface Message {
     createdAt: string;
 }
 
+/**
+ * The transcript window currently on screen. Ephemeral like listVersion (never
+ * persisted): it names a position in one conversation, and a reload re-fetches
+ * the latest window anyway. A fresh canvas has none, so a stale cursor can
+ * never page a previous thread into a new one.
+ */
+export interface MessagePageInfo {
+    hasMorePrev: boolean;
+    prevCursor: string | null;
+}
+
 interface ChatState {
     // Current model selection
     providerId: string;
@@ -41,9 +52,16 @@ interface ChatState {
     conversationId: string | null;
     conversationTitle: string;
     messages: Message[];
+    page: MessagePageInfo | null;
 
     // UI state
     isSidebarOpen: boolean;
+
+    // Ephemeral list-refresh token. Bumped when a turn creates a conversation
+    // the sidebar has never been told about; the sidebar passes it as the
+    // refresh key of its /api/conversations read. Not persisted: a reload
+    // re-fetches the list anyway.
+    listVersion: number;
 
     // Actions
     setProviderId: (id: string) => void;
@@ -54,13 +72,15 @@ interface ChatState {
     setConversationId: (id: string | null) => void;
     setConversationTitle: (title: string) => void;
     setMessages: (messages: Message[]) => void;
+    setPage: (page: MessagePageInfo | null) => void;
     addMessage: (message: Message) => void;
     removeMessage: (id: string) => void;
-    updateLastMessage: (content: string) => void;
+    updateMessage: (id: string, content: string) => void;
     clearMessages: () => void;
 
     toggleSidebar: () => void;
     setSidebarOpen: (open: boolean) => void;
+    bumpListVersion: () => void;
 }
 
 export const useChatStore = create<ChatState>()(
@@ -73,7 +93,9 @@ export const useChatStore = create<ChatState>()(
             conversationId: null,
             conversationTitle: "New Chat",
             messages: [],
+            page: null,
             isSidebarOpen: true,
+            listVersion: 0,
 
             // Model selection actions
             setProviderId: (id) => set({ providerId: id }),
@@ -85,28 +107,29 @@ export const useChatStore = create<ChatState>()(
             setConversationId: (id) => set({ conversationId: id }),
             setConversationTitle: (title) => set({ conversationTitle: title }),
             setMessages: (messages) => set({ messages }),
+            setPage: (page) => set({ page }),
             addMessage: (message) =>
                 set((state) => ({ messages: [...state.messages, message] })),
             removeMessage: (id) =>
                 set((state) => ({
                     messages: state.messages.filter((message) => message.id !== id),
                 })),
-            updateLastMessage: (content) =>
-                set((state) => {
-                    const messages = [...state.messages];
-                    if (messages.length > 0) {
-                        messages[messages.length - 1] = {
-                            ...messages[messages.length - 1],
-                            content,
-                        };
-                    }
-                    return { messages };
-                }),
-            clearMessages: () => set({ messages: [], conversationId: null, conversationTitle: "New Chat" }),
+            // Id-targeted update: a stream must only ever write to its own
+            // message. The old positional updateLastMessage could overwrite
+            // the last message of a DIFFERENT conversation the user switched
+            // to mid-stream.
+            updateMessage: (id, content) =>
+                set((state) => ({
+                    messages: state.messages.map((message) =>
+                        message.id === id ? { ...message, content } : message
+                    ),
+                })),
+            clearMessages: () => set({ messages: [], conversationId: null, conversationTitle: "New Chat", page: null }),
 
             // UI actions
             toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
             setSidebarOpen: (open) => set({ isSidebarOpen: open }),
+            bumpListVersion: () => set((state) => ({ listVersion: state.listVersion + 1 })),
         }),
         {
             name: "omnichat-chat-store",

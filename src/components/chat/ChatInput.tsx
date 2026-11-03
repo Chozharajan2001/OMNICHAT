@@ -49,21 +49,38 @@ export function ChatInput({
                         <div className="mb-2 flex items-center justify-between px-1">
                             <span className="section-kicker">Prompt composer</span>
                             <span className="text-xs text-muted-foreground">
-                                {sendWithEnter ? "Enter to send" : "Ctrl/Cmd+Enter to send"}
+                                {isLoading
+                                    ? "Finish or stop this reply to send the next one"
+                                    : sendWithEnter
+                                        ? "Enter to send"
+                                        : "Ctrl/Cmd+Enter to send"}
                             </span>
                         </div>
+                        {/* A real label, visually hidden: an aria-label on a
+                            multiline control gives no label activation and is
+                            dropped by some voice-control grammars. */}
+                        <label htmlFor="chat-composer" className="sr-only">
+                            Type your message
+                        </label>
+                        {/* The composer stays editable while a reply streams:
+                            disabling it made people wait to draft the next
+                            message, and any selection or IME composition was
+                            lost. Sending is still withheld for the turn (the
+                            hook ignores submit while loading), and the hint
+                            above says so rather than eating Enter silently. */}
                         <Textarea
+                            id="chat-composer"
                             value={value}
                             onChange={onChange}
                             onKeyDown={handleKeyDown}
                             placeholder="Ask anything, compare models, or shape the reply with your own voice."
-                            disabled={disabled || isLoading}
-                            aria-label="Type your message"
+                            disabled={disabled}
                             className={cn(
-                                "min-h-[108px] max-h-[220px] resize-none rounded-[1.5rem] border-0 bg-transparent px-4 py-4 text-base shadow-none sm:min-h-[120px]",
+                                "min-h-[68px] max-h-[220px] resize-none rounded-[1.5rem] border-0 bg-transparent px-4 py-3 text-base shadow-none",
+                                "sm:min-h-[108px] sm:py-4",
                                 "focus-visible:ring-0 focus-visible:ring-offset-0"
                             )}
-                            rows={4}
+                            rows={2}
                         />
                     </div>
 
@@ -82,7 +99,7 @@ export function ChatInput({
                             type="submit"
                             disabled={!value.trim() || disabled}
                             aria-label="Send message"
-                            className="h-12 w-full shrink-0 rounded-2xl shadow-[0_16px_30px_rgba(124,109,255,0.24)] sm:mt-auto sm:h-14 sm:w-14 sm:rounded-full"
+                            className="h-12 w-full shrink-0 rounded-2xl shadow-[0_16px_30px_var(--shadow-primary)] sm:mt-auto sm:h-14 sm:w-14 sm:rounded-full"
                         >
                             <Send className="h-4 w-4" />
                         </Button>

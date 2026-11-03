@@ -1,0 +1,2756 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "OmniChat API",
+    "version": "1.4.0",
+    "description": "OmniChat is a desktop-first, self-hostable AI chat workspace with BYOK (Bring Your Own Key) support. This API covers conversations, messages, projects, provider credentials, user preferences, streaming chat and operational endpoints.\n\nEvery path below is relative to the `/api` base in `servers`. Authentication is the NextAuth session cookie, enforced by the route guard in src/proxy.ts for all paths except `/health` and the exact `/metrics` (which is gated by its bearer token instead) and the `/auth/*` namespace. Mutations with a JSON body additionally require a same-origin `Origin`/`Referer` (403), a JSON content type (415), and a resolvable canonical origin (503 when `APP_ORIGIN`/`NEXTAUTH_URL` are unset in production).",
+    "contact": {
+      "name": "OmniChat Support",
+      "url": "https://github.com/your-org/omnichat"
+    },
+    "license": {
+      "name": "MIT",
+      "url": "https://opensource.org/licenses/MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000/api",
+      "description": "Local development server"
+    },
+    {
+      "url": "https://your-domain.com/api",
+      "description": "Production server"
+    }
+  ],
+  "security": [
+    {
+      "sessionAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Authentication"
+    },
+    {
+      "name": "Chat"
+    },
+    {
+      "name": "Conversations"
+    },
+    {
+      "name": "Projects"
+    },
+    {
+      "name": "API Keys"
+    },
+    {
+      "name": "Providers"
+    },
+    {
+      "name": "Preferences"
+    },
+    {
+      "name": "System"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health check",
+        "description": "Readiness probe for monitors and container healthchecks; exempt from the session guard in src/proxy.ts. Probes both the database and the encryption secret.",
+        "operationId": "getHealth",
+        "tags": [
+          "System"
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Application is healthy (database up and encryption configured).",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Always no-store."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthStatus"
+                },
+                "example": {
+                  "status": "healthy",
+                  "timestamp": "2026-09-30T12:00:00.000Z",
+                  "checks": {
+                    "database": "up",
+                    "encryption": "up"
+                  },
+                  "version": "0.1.0"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Not ready. `degraded` means the database answers but the vault key is missing or shorter than 32 characters; `unhealthy` means the database probe failed. Both return 503 so strict probes treat the instance as down.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Always no-store."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthStatus"
+                },
+                "example": {
+                  "status": "degraded",
+                  "timestamp": "2026-09-30T12:00:00.000Z",
+                  "checks": {
+                    "database": "up",
+                    "encryption": "down"
+                  },
+                  "version": "0.1.0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "summary": "Prometheus metrics",
+        "description": "Prometheus text exposition. Deliberately exempt from the session guard in src/proxy.ts so a scraper can reach it; the bearer token is therefore the ONLY gate. Fails closed: with `METRICS_TOKEN` unset in production, and on any token mismatch, the response is 404 with an empty body so the surface is not advertised. With the token unset outside production the endpoint is open for local debugging.",
+        "operationId": "getMetrics",
+        "tags": [
+          "System"
+        ],
+        "security": [
+          {
+            "metricsToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Metrics in Prometheus text format. The registry always carries the app_info build identity; route, auth-attempt and rate-limit series appear once real requests flow through routeTimer and the auth/limiter helpers (measured: login and authenticated 200s produce http_requests_total, http_request_duration_seconds, http_errors_total and auth_attempts_total on a fresh keyless boot). Only chat_* counters still need a real provider key, via a completed chat turn.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Always no-store."
+              }
+            },
+            "content": {
+              "text/plain; version=0.0.4; charset=utf-8": {
+                "schema": {
+                  "type": "string"
+                },
+                "example": "# TYPE app_info gauge\napp_info{version=\"0.1.0\"} 1\n# TYPE http_requests_total counter\nhttp_requests_total{method=\"GET\",path=\"/api/conversations\",status=\"200\"} 1\n# TYPE auth_attempts_total counter\nauth_attempts_total{method=\"credentials\"} 1\n"
+              }
+            }
+          },
+          "404": {
+            "description": "Unauthorized for this endpoint, or disabled because METRICS_TOKEN is unset in production. Empty body; 404 rather than 401/403 by design.",
+            "content": {}
+          }
+        }
+      }
+    },
+    "/providers": {
+      "get": {
+        "summary": "List providers with the caller's key status",
+        "description": "The full provider registry, annotated with whether the authenticated user has stored a key for each provider.",
+        "operationId": "listProviders",
+        "tags": [
+          "Providers"
+        ],
+        "responses": {
+          "200": {
+            "description": "Provider registry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "providers"
+                  ],
+                  "properties": {
+                    "providers": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Provider"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/chat": {
+      "post": {
+        "summary": "Stream a chat completion",
+        "description": "Validates the request, decrypts the stored provider key server-side, calls the provider and streams the reply as a plain-text token stream (not JSON). The user message is persisted BEFORE the provider is called, the assistant reply and `Conversation.updatedAt` are written when the stream finishes, and a stopped stream still stores the partial reply; a turn is never persisted twice. Prompt history is rebuilt from the database plus the incoming user message - the client transcript is not trusted. `privateMode` skips all persistence and is the one case where the request transcript is the conversation, which is why the array is capped: the client sends at most `maxItems` messages and drops the oldest to stay under it. Never echoes the API key.",
+        "operationId": "streamChat",
+        "tags": [
+          "Chat"
+        ],
+        "x-max-duration-seconds": 60,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Plain-text streamed completion. If the provider fails part-way, the notice is appended to the body after the marker line `[[omnichat:stream-error]]` (200 stays 200 because the SDK already sent the headers): everything before the marker is the answer, everything after it is a transport failure and belongs in an error channel, not in the assistant history.",
+            "headers": {
+              "X-Conversation-Id": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Conversation the turn belongs to. Absent when privateMode is true."
+              },
+              "X-RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64"
+                }
+              }
+            },
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed JSON body, schema violation, a transcript whose last message is not from the user, or no stored key for the provider.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Last message must be from the user"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenOrigin"
+          },
+          "404": {
+            "description": "The named conversation does not exist or does not belong to the caller. A conversationId that was supplied is never silently replaced by a new conversation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedType"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitedChat"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/BackendUnavailable"
+          }
+        }
+      }
+    },
+    "/conversations": {
+      "get": {
+        "summary": "List conversations",
+        "description": "Cursor-paginated by (updatedAt, id), newest first. Each item carries at most its last message.",
+        "operationId": "listConversations",
+        "tags": [
+          "Conversations"
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Page size, clamped to 1-100 out of range rather than rejected.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          },
+          {
+            "name": "cursorId",
+            "in": "query",
+            "required": false,
+            "description": "Conversation id from a previous nextCursor. An id that is malformed, or that names no conversation the caller owns, is a 400.",
+            "schema": {
+              "type": "string",
+              "format": "cuid"
+            }
+          },
+          {
+            "name": "archived",
+            "in": "query",
+            "required": false,
+            "description": "Pass the literal string `true` to list archived conversations only.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Title substring filter, trimmed and capped at 100 characters. First page only: nextCursor is null, and combining q with cursorId is a 400.",
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of conversations.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "conversations"
+                  ],
+                  "properties": {
+                    "conversations": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ConversationSummary"
+                      }
+                    },
+                    "nextCursor": {
+                      "nullable": true,
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/Cursor"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The `cursorId` is malformed, or names no conversation the caller owns, or `cursorId` was combined with `q`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a conversation",
+        "description": "providerId and modelId are required; a project, when given, is ownership-checked.",
+        "operationId": "createConversation",
+        "tags": [
+          "Conversations"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateConversationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created conversation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conversation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Schema violation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrors"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenOrigin"
+          },
+          "404": {
+            "description": "projectId refers to a project the caller does not own.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedType"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/BackendUnavailable"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete every conversation of the caller",
+        "description": "Bulk delete guarded by CSRF; cascades to messages. Idempotent - an empty result returns deletedCount 0.",
+        "operationId": "deleteAllConversations",
+        "tags": [
+          "Conversations"
+        ],
+        "responses": {
+          "200": {
+            "description": "All conversations removed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "deletedCount"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "deletedCount": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenOrigin"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/BackendUnavailable"
+          }
+        }
+      }
+    },
+    "/conversations/{id}/export": {
+      "get": {
+        "summary": "Export one conversation as a file",
+        "description": "Portable JSON (id, title, provider, model, exportedAt, turns in order). Internal ids, ownership columns and prompts stay behind. Answered as an attachment with no-store.",
+        "operationId": "exportConversation",
+        "tags": [
+          "Conversations"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConversationId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The thread as a named JSON download.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "title",
+                    "messages",
+                    "exportedAt"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "cuid"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "providerId": {
+                      "type": "string"
+                    },
+                    "modelId": {
+                      "type": "string"
+                    },
+                    "exportedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "messages": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MessageRecord"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Unknown id, or owned by another user (same response, no enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/conversations/{id}": {
+      "get": {
+        "summary": "Get one conversation with its transcript",
+        "description": "Without paging params the whole transcript comes back. With any of limit/cursor/direction only one window does (default 20, latest first); the shape is identical either way, with page fields that are all false/null on a complete transcript.",
+        "operationId": "getConversation",
+        "tags": [
+          "Conversations"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConversationId"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Window size, 1-100. Presence switches to paged mode.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Message id from a previous prevCursor/nextCursor. Must name a message in this conversation; anything else is a 400, never a silent fork.",
+            "schema": {
+              "type": "string",
+              "format": "cuid"
+            }
+          },
+          {
+            "name": "direction",
+            "in": "query",
+            "required": false,
+            "description": "Which side of the cursor to read. Defaults to prev (older). No cursor means the latest window regardless of direction.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "prev",
+                "next"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conversation with messages oldest-first: the whole transcript, or one window when paging.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationWithMessages"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad limit/direction, or a cursor naming no message in this conversation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Unknown id, or owned by another user (same response, no enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update a conversation",
+        "description": "Partial update. `archived: true` sets archivedAt, `false` clears it. Model changes are not part of this contract.",
+        "operationId": "updateConversation",
+        "tags": [
+          "Conversations"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConversationId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateConversationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated conversation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conversation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Schema violation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrors"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenOrigin"
+          },
+          "404": {
+            "description": "Not found or not owned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedType"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/BackendUnavailable"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete one conversation",
+        "operationId": "deleteConversation",
+        "tags": [
+          "Conversations"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConversationId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenOrigin"
+          },
+          "404": {
+            "description": "Not found or not owned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/BackendUnavailable"
+          }
+        }
+      }
+    },
+    "/projects": {
+      "get": {
+        "summary": "List projects",
+        "description": "Flat shape: the 200 body is `{ projects }`, like every other collection route.",
+        "operationId": "listProjects",
+        "tags": [
+          "Projects"
+        ],
+        "responses": {
+          "200": {
+            "description": "Projects with conversation counts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "projects"
+                  ],
+                  "properties": {
+                    "projects": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ProjectWithCount"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a project",
+        "description": "Rate limited: 30 writes per minute per authenticated user.",
+        "operationId": "createProject",
+        "tags": [
+          "Projects"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "color": {
+                    "type": "string",
+                    "maxLength": 20,
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Project created.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "project"
+                  ],
+                  "properties": {
+                    "project": {
+                      "$ref": "#/components/schemas/Project"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Schema violation, or the (userId, name) unique pair already exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrors"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenOrigin"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedType"
+          },
+          "429": {
+            "description": "Write quota exhausted.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds until the window resets."
+              },
+              "X-RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/BackendUnavailable"
+          }
+        }
+      }
+    },
+    "/projects/{id}": {
+      "patch": {
+        "summary": "Rename a project",
+        "description": "Provide name or color (or both). A duplicate (userId, name) pair is a 400, not a 500.",
+        "operationId": "updateProject",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "minProperties": 1,
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "color": {
+                    "type": "string",
+                    "maxLength": 20,
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated project.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "project"
+                  ],
+                  "properties": {
+                    "project": {
+                      "$ref": "#/components/schemas/Project"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Schema violation, an empty object, or the (userId, name) unique pair already exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenOrigin"
+          },
+          "404": {
+            "description": "Not found or not owned; an ownership failure is reported as 404, never 403, to avoid confirming other users' ids.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/BackendUnavailable"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a project",
+        "description": "Conversations are kept; their projectId is nulled.",
+        "operationId": "deleteProject",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenOrigin"
+          },
+          "404": {
+            "description": "Not found or not owned; an ownership failure is reported as 404, never 403, to avoid confirming other users' ids.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/BackendUnavailable"
+          }
+        }
+      }
+    },
+    "/api-keys": {
+      "get": {
+        "summary": "List stored API keys (metadata only)",
+        "description": "Ciphertext and plaintext are never returned; only a hint.",
+        "operationId": "listApiKeys",
+        "tags": [
+          "API Keys"
+        ],
+        "responses": {
+          "200": {
+            "description": "Key metadata for the caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "keys"
+                  ],
+                  "properties": {
+                    "keys": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ApiKey"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "post": {
+        "summary": "Store a provider API key",
+        "description": "Validated against the provider before storage unless validate=false. The key is encrypted with AES-256-GCM under a PBKDF2-derived key (600,000 iterations, per-encryption salt) and only the ciphertext and a hint are persisted. Rate limited: 10 requests per minute per authenticated user.",
+        "operationId": "saveApiKey",
+        "tags": [
+          "API Keys"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveKeyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored. Note: 200, not 201.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Schema violation, unknown provider, or provider rejected the key. A providerId outside the registry is refused here rather than stored invisibly.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrors"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenOrigin"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedType"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitedChat"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/BackendUnavailable"
+          }
+        }
+      }
+    },
+    "/api-keys/{providerId}": {
+      "delete": {
+        "summary": "Delete the stored key for one provider",
+        "operationId": "deleteApiKey",
+        "tags": [
+          "API Keys"
+        ],
+        "parameters": [
+          {
+            "name": "providerId",
+            "in": "path",
+            "required": true,
+            "description": "Registry id, e.g. `openai`.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted, or was already absent (idempotent).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing providerId.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenOrigin"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/BackendUnavailable"
+          }
+        }
+      }
+    },
+    "/preferences": {
+      "get": {
+        "summary": "Read user preferences",
+        "operationId": "getPreferences",
+        "tags": [
+          "Preferences"
+        ],
+        "responses": {
+          "200": {
+            "description": "Preferences, or null when the user has never saved any.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "preferences"
+                  ],
+                  "properties": {
+                    "preferences": {
+                      "nullable": true,
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/Preferences"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update user preferences",
+        "description": "Partial upsert; unspecified fields keep their current value, and a first write applies defaults.",
+        "operationId": "updatePreferences",
+        "tags": [
+          "Preferences"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreferencesUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored preferences.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "preferences"
+                  ],
+                  "properties": {
+                    "preferences": {
+                      "$ref": "#/components/schemas/Preferences"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Schema violation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrors"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenOrigin"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedType"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/BackendUnavailable"
+          }
+        }
+      }
+    },
+    "/auth/{nextauthRoute}": {
+      "get": {
+        "summary": "Auth.js endpoint handler",
+        "description": "Catch-all mounted from Auth.js: /auth/signin, /auth/callback/{provider}, /auth/session, /auth/verify-request, /auth/signout. Not a literal route; concrete sub-paths are owned by the Auth.js handlers and may change with the dependency version.",
+        "operationId": "authGet",
+        "tags": [
+          "Authentication"
+        ],
+        "security": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/NextAuthRoute"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Varies by sub-path (session JSON, an HTML page, or a form POST body)."
+          },
+          "302": {
+            "description": "Redirect during the OAuth dance or after sign-out."
+          },
+          "401": {
+            "description": "Authentication failed."
+          }
+        }
+      },
+      "post": {
+        "summary": "Auth.js endpoint handler (POST side)",
+        "description": "Sign-in and sign-out submissions, including the credentials form.",
+        "operationId": "authPost",
+        "tags": [
+          "Authentication"
+        ],
+        "security": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/NextAuthRoute"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Varies by sub-path."
+          },
+          "302": {
+            "description": "Redirect to the callback or post-signin URL."
+          },
+          "401": {
+            "description": "Authentication failed."
+          }
+        }
+      }
+    },
+    "/auth/register": {
+      "post": {
+        "summary": "Register an account and send the verification mail",
+        "description": "Registered under /api/auth/* and therefore outside the session guard in src/proxy.ts. Answered only when EMAIL_VERIFICATION_REQUIRED=true; otherwise 404. Rate limited per IP (10/hour) and per normalized address (3/hour). Passwords must be 8+ characters (72-byte cap) with upper, lower and a digit; the schema is strict, so unknown fields are rejected.",
+        "operationId": "register",
+        "tags": [
+          "Authentication"
+        ],
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "email",
+                  "password"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "maxLength": 254
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 72
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted. The same generic answer is returned whether or not the address was newly created, to prevent account enumeration.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                },
+                "example": {
+                  "message": "If verification is needed, check your email for instructions."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed JSON or schema violation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrors"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenOrigin"
+          },
+          "404": {
+            "description": "Email verification is not enabled (EMAIL_VERIFICATION_REQUIRED is not `true`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body larger than 4096 bytes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedType"
+          },
+          "429": {
+            "description": "Send quota exhausted. Only Retry-After is attached here, not the X-RateLimit-* trio.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "SMTP configuration invalid or the rate-limit backend is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/resend-verification": {
+      "post": {
+        "summary": "Resend a verification mail",
+        "description": "Same 404/403/413/415/429/503 envelope as /auth/register; the body is only an email address.",
+        "operationId": "resendVerification",
+        "tags": [
+          "Authentication"
+        ],
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "email"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "maxLength": 254
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted, phrased identically whether or not the address exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed JSON or schema violation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrors"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenOrigin"
+          },
+          "404": {
+            "description": "Email verification is not enabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body larger than 4096 bytes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedType"
+          },
+          "429": {
+            "description": "Send quota exhausted; Retry-After only.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "SMTP configuration invalid or the rate-limit backend is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/verify-email": {
+      "post": {
+        "summary": "Confirm a verification token",
+        "description": "Confirmation happens on POST so that mail scanners prefetching a GET link cannot consume the token. The token is 64 hex characters, expires after 30 minutes and is consumed atomically, so a replay fails.",
+        "operationId": "verifyEmail",
+        "tags": [
+          "Authentication"
+        ],
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "email",
+                  "token"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "maxLength": 254
+                  },
+                  "token": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Address verified.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                },
+                "example": {
+                  "message": "Email verified. You can now sign in."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown, expired, already-consumed or mismatched token, or a schema violation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenOrigin"
+          },
+          "404": {
+            "description": "Email verification is not enabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body larger than 4096 bytes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedType"
+          },
+          "429": {
+            "description": "Verification attempt quota exhausted (30/15min per IP, 10/15min per address); Retry-After only.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds until the window resets."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "SMTP configuration invalid or the rate-limit backend is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api-keys/{providerId}/validate": {
+      "post": {
+        "summary": "Re-validate the stored key for one provider",
+        "description": "Sends one real request to the provider using the credential already in the vault and records the verdict. The key itself is never returned. Rate limited because the check is billed.",
+        "operationId": "validateApiKey",
+        "tags": [
+          "API Keys"
+        ],
+        "parameters": [
+          {
+            "name": "providerId",
+            "in": "path",
+            "required": true,
+            "description": "Registry id, e.g. `openai`. An id outside the registry is a 400.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Checked. `valid` is the provider verdict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "providerId",
+                    "valid"
+                  ],
+                  "properties": {
+                    "providerId": {
+                      "type": "string"
+                    },
+                    "valid": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "providerId is not in the provider registry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenOrigin"
+          },
+          "404": {
+            "description": "No stored key for this provider.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitedChat"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/BackendUnavailable"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "sessionAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "next-auth.session-token",
+        "description": "NextAuth session cookie. Hosted deployments additionally require the account's email to be verified when EMAIL_VERIFICATION_REQUIRED=true."
+      },
+      "metricsToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Value of METRICS_TOKEN, compared in constant time. The only gate on /metrics, which is exempt from the session guard in src/proxy.ts."
+      }
+    },
+    "parameters": {
+      "ConversationId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "Conversation cuid.",
+        "schema": {
+          "type": "string",
+          "format": "cuid"
+        }
+      },
+      "NextAuthRoute": {
+        "name": "nextauthRoute",
+        "in": "path",
+        "required": true,
+        "description": "Auth.js sub-path, e.g. `signin/google`, `callback/github`, `session` or `signout`.",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "No session. The route guard answers 401 for /api paths instead of redirecting to /login.",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string"
+            },
+            "description": "Always no-store."
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "Unauthorized"
+            }
+          }
+        }
+      },
+      "ForbiddenOrigin": {
+        "description": "CSRF rejection: the Origin/Referer is missing, opaque or foreign to APP_ORIGIN.",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string"
+            },
+            "description": "Always no-store."
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "UnsupportedType": {
+        "description": "The mutation requires a JSON content type.",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string"
+            },
+            "description": "Always no-store."
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "RateLimitedChat": {
+        "description": "Quota exhausted (chat: 60/min per user, API keys: 10/min per user).",
+        "headers": {
+          "Retry-After": {
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Seconds until the window resets."
+          },
+          "X-RateLimit-Limit": {
+            "schema": {
+              "type": "integer"
+            }
+          },
+          "X-RateLimit-Remaining": {
+            "schema": {
+              "type": "integer"
+            }
+          },
+          "X-RateLimit-Reset": {
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Error"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "retryAfter": {
+                      "type": "integer",
+                      "description": "Same value as Retry-After, in the body."
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "BackendUnavailable": {
+        "description": "Fail-closed: the distributed rate-limit backend was configured but is unreachable, so the request is refused rather than silently unlimited. Also returned when no canonical origin can be resolved for CSRF in production.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "InternalError": {
+        "description": "Sanitized failure. The underlying error is logged server-side and never returned to the client.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "An error occurred while processing your request"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "ValidationErrors": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "Invalid request"
+          },
+          "details": {
+            "type": "array",
+            "description": "Zod issues for the failed schema.",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
+      },
+      "Message": {
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "HealthStatus": {
+        "type": "object",
+        "required": [
+          "status",
+          "timestamp",
+          "checks",
+          "version"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "healthy",
+              "degraded",
+              "unhealthy"
+            ],
+            "description": "healthy = 200; degraded (database up, vault key unusable) and unhealthy (database down) both = 503."
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "checks": {
+            "type": "object",
+            "required": [
+              "database",
+              "encryption"
+            ],
+            "properties": {
+              "database": {
+                "type": "string",
+                "enum": [
+                  "up",
+                  "down"
+                ]
+              },
+              "encryption": {
+                "type": "string",
+                "enum": [
+                  "up",
+                  "down"
+                ],
+                "description": "up when ENCRYPTION_SECRET_KEY is set and at least 32 characters."
+              }
+            }
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "MessageRole": {
+        "type": "string",
+        "enum": [
+          "system",
+          "user",
+          "assistant"
+        ],
+        "description": "Persisted from server-side literals; a client-supplied role is never trusted."
+      },
+      "MessageRecord": {
+        "type": "object",
+        "required": [
+          "id",
+          "conversationId",
+          "role",
+          "content",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "cuid"
+          },
+          "conversationId": {
+            "type": "string",
+            "format": "cuid"
+          },
+          "role": {
+            "$ref": "#/components/schemas/MessageRole"
+          },
+          "content": {
+            "type": "string"
+          },
+          "modelId": {
+            "type": "string",
+            "nullable": true
+          },
+          "providerId": {
+            "type": "string",
+            "nullable": true
+          },
+          "tokenCount": {
+            "type": "integer",
+            "nullable": true
+          },
+          "cost": {
+            "type": "number",
+            "format": "float",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Cursor": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "cuid"
+          }
+        },
+        "description": "Opaque resume token: the id of the first conversation of the NEXT page. Feed nextCursor.id back as cursorId."
+      },
+      "Conversation": {
+        "type": "object",
+        "required": [
+          "id",
+          "userId",
+          "title",
+          "providerId",
+          "modelId",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "cuid"
+          },
+          "userId": {
+            "type": "string",
+            "format": "cuid"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "providerId": {
+            "type": "string"
+          },
+          "modelId": {
+            "type": "string"
+          },
+          "systemPrompt": {
+            "type": "string",
+            "nullable": true
+          },
+          "projectId": {
+            "type": "string",
+            "nullable": true,
+            "format": "cuid"
+          },
+          "folderId": {
+            "type": "string",
+            "nullable": true,
+            "format": "cuid",
+            "description": "Reserved: the column exists, but there is no Folder entity, no API accepts a value for it and it is always null."
+          },
+          "archivedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Touched on every completed chat turn, which is what keeps list recency and cursors correct."
+          }
+        }
+      },
+      "ConversationSummary": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Conversation"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "lastMessage": {
+                "nullable": true,
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/MessageRecord"
+                  }
+                ],
+                "description": "At most the newest message, from the list query."
+              }
+            }
+          }
+        ]
+      },
+      "ConversationWithMessages": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Conversation"
+          },
+          {
+            "type": "object",
+            "required": [
+              "messages",
+              "hasMorePrev",
+              "hasMoreNext",
+              "prevCursor",
+              "nextCursor"
+            ],
+            "properties": {
+              "messages": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/MessageRecord"
+                },
+                "description": "Oldest first: the whole transcript, or one window when any paging param was sent."
+              },
+              "hasMorePrev": {
+                "type": "boolean",
+                "description": "Older messages exist beyond this window."
+              },
+              "hasMoreNext": {
+                "type": "boolean",
+                "description": "Newer messages exist beyond this window."
+              },
+              "prevCursor": {
+                "nullable": true,
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/Cursor"
+                  }
+                ],
+                "description": "Oldest message of this window; feed its id back as cursor with direction=prev. Null on an empty window."
+              },
+              "nextCursor": {
+                "nullable": true,
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/Cursor"
+                  }
+                ],
+                "description": "Newest message of this window; feed its id back as cursor with direction=next. Null on an empty window."
+              }
+            }
+          }
+        ]
+      },
+      "Project": {
+        "type": "object",
+        "required": [
+          "id",
+          "userId",
+          "name",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "cuid"
+          },
+          "userId": {
+            "type": "string",
+            "format": "cuid"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "color": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ProjectWithCount": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Project"
+          },
+          {
+            "type": "object",
+            "required": [
+              "_count"
+            ],
+            "properties": {
+              "_count": {
+                "type": "object",
+                "required": [
+                  "conversations"
+                ],
+                "properties": {
+                  "conversations": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ApiKey": {
+        "type": "object",
+        "required": [
+          "id",
+          "providerId",
+          "keyHint",
+          "isValid",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "cuid"
+          },
+          "providerId": {
+            "type": "string"
+          },
+          "keyHint": {
+            "type": "string",
+            "description": "Last four characters only. Never the key or the ciphertext."
+          },
+          "isValid": {
+            "type": "boolean",
+            "description": "Means \"confirmed valid with the provider\". A key stored with validate=false is intentionally false, not a failure; a decrypt failure also flips it to false."
+          },
+          "lastValidatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Preferences": {
+        "type": "object",
+        "required": [
+          "id",
+          "userId",
+          "theme",
+          "sendWithEnter",
+          "showTokenCount",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "cuid"
+          },
+          "userId": {
+            "type": "string",
+            "format": "cuid"
+          },
+          "defaultProviderId": {
+            "type": "string",
+            "nullable": true
+          },
+          "defaultModelId": {
+            "type": "string",
+            "nullable": true
+          },
+          "defaultSystemPrompt": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 10000
+          },
+          "theme": {
+            "type": "string",
+            "enum": [
+              "light",
+              "dark",
+              "system"
+            ]
+          },
+          "sendWithEnter": {
+            "type": "boolean"
+          },
+          "showTokenCount": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PreferencesUpdate": {
+        "type": "object",
+        "description": "Every field optional; the PATCH is a partial upsert. The two default-model fields are the exception: they are validated as a pair against the provider registry, so sending one without the other is a 400 rather than a half-applied default every new conversation would open with.",
+        "properties": {
+          "defaultProviderId": {
+            "type": "string",
+            "description": "Must be a provider in the registry, and must be sent with defaultModelId."
+          },
+          "defaultModelId": {
+            "type": "string",
+            "description": "Must be a model of the supplied defaultProviderId, and must be sent with it."
+          },
+          "defaultSystemPrompt": {
+            "type": "string",
+            "maxLength": 10000
+          },
+          "theme": {
+            "type": "string",
+            "enum": [
+              "light",
+              "dark",
+              "system"
+            ]
+          },
+          "sendWithEnter": {
+            "type": "boolean"
+          },
+          "showTokenCount": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ProviderModel": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "contextWindow": {
+            "type": "integer"
+          },
+          "maxOutputTokens": {
+            "type": "integer"
+          },
+          "inputPricePerMToken": {
+            "type": "number"
+          },
+          "outputPricePerMToken": {
+            "type": "number"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "isDefault": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Provider": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "hasKey"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "website": {
+            "type": "string",
+            "format": "uri"
+          },
+          "docsUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "supportsStreaming": {
+            "type": "boolean"
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProviderModel"
+            }
+          },
+          "hasKey": {
+            "type": "boolean",
+            "description": "Whether the caller has stored a key for this provider."
+          },
+          "keyHint": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "ChatRequest": {
+        "type": "object",
+        "required": [
+          "messages",
+          "providerId",
+          "modelId"
+        ],
+        "properties": {
+          "messages": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "description": "Client transcript. Its last entry must be from the user, otherwise 400. Only used for continuity; the prompt actually sent is rebuilt from the database.",
+            "items": {
+              "type": "object",
+              "required": [
+                "role",
+                "content"
+              ],
+              "properties": {
+                "role": {
+                  "$ref": "#/components/schemas/MessageRole"
+                },
+                "content": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100000
+                }
+              }
+            }
+          },
+          "providerId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "modelId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "conversationId": {
+            "type": "string",
+            "format": "cuid",
+            "nullable": true
+          },
+          "privateMode": {
+            "type": "boolean",
+            "default": false,
+            "description": "When true nothing is persisted and no X-Conversation-Id is returned."
+          },
+          "temperature": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 2,
+            "default": 0.7
+          },
+          "maxTokens": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200000,
+            "default": 4096
+          },
+          "systemPrompt": {
+            "type": "string",
+            "maxLength": 10000
+          },
+          "projectId": {
+            "type": "string",
+            "format": "cuid",
+            "description": "Applied when this request creates the conversation."
+          }
+        }
+      },
+      "CreateConversationRequest": {
+        "type": "object",
+        "required": [
+          "providerId",
+          "modelId"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "providerId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "modelId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "projectId": {
+            "type": "string",
+            "format": "cuid"
+          },
+          "systemPrompt": {
+            "type": "string",
+            "maxLength": 10000
+          }
+        }
+      },
+      "UpdateConversationRequest": {
+        "type": "object",
+        "description": "Model changes are not part of this contract, and the retired isPinned field is no longer accepted.",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "projectId": {
+            "type": "string",
+            "format": "cuid",
+            "nullable": true
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "Maps to archivedAt: true stamps it, false clears it."
+          }
+        },
+        "required": []
+      },
+      "SaveKeyRequest": {
+        "type": "object",
+        "required": [
+          "providerId",
+          "apiKey"
+        ],
+        "properties": {
+          "providerId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "apiKey": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 500,
+            "writeOnly": true
+          },
+          "validate": {
+            "type": "boolean",
+            "default": true,
+            "description": "When false the key is stored with isValid=false, meaning \"not yet confirmed with the provider\"."
+          }
+        }
+      }
+    }
+  }
+}

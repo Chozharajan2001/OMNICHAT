@@ -7,7 +7,8 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { useChatStore, type Message } from "@/stores/chat-store";
+import { useChatStore, type Message, type MessagePageInfo } from "@/stores/chat-store";
+import { CHAT_MAX_REQUEST_MESSAGES, DEFAULT_MESSAGE_PAGE_SIZE, STREAM_ERROR_MARKER } from "@/lib/constants";
 
 interface UseOmniChatOptions {
     conversationId?: string | null;
@@ -27,8 +28,170 @@ function createMessageId(): string {
     return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 }
 
+interface TranscriptMessage {
+    role: "system" | "user" | "assistant";
+    content: string;
+}
+
+interface StoredMessageRow {
+    id: string;
+    role: string;
+    content: string;
+    modelId?: string;
+    providerId?: string;
+    tokenCount?: number;
+    createdAt: string;
+}
+
+// One reader for both message endpoints: the shape is shared, and two copies
+// of this literal have already drifted once (tokenCount dropped on one path).
+function toStoreMessages(rows: StoredMessageRow[]): Message[] {
+    return rows.map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        modelId: m.modelId,
+        providerId: m.providerId,
+        tokenCount: m.tokenCount,
+        createdAt: m.createdAt,
+    })) as Message[];
+}
+
+export interface OlderMessagePage extends MessagePageInfo {
+    messages: Message[];
+}
+
+function pageInfoOf(data: { hasMorePrev?: unknown; prevCursor?: { id?: unknown } | null }): MessagePageInfo {
+    return {
+        hasMorePrev: data.hasMorePrev === true,
+        prevCursor:
+            data.prevCursor && typeof data.prevCursor.id === "string" ? data.prevCursor.id : null,
+    };
+}
+
+/**
+ * A window older than `cursor`. Pure fetch: the caller prepends to the store,
+ * so a failed page leaves the visible transcript untouched.
+ */
+export async function fetchOlderPage(
+    conversationId: string,
+    cursor: string
+): Promise<OlderMessagePage> {
+    const response = await fetch(
+        `/api/conversations/${conversationId}?limit=${DEFAULT_MESSAGE_PAGE_SIZE}&cursor=${encodeURIComponent(cursor)}&direction=prev`
+    );
+    if (!response.ok) throw new Error("Failed to load older messages");
+
+    const data = await response.json();
+    return {
+        messages: toStoreMessages((data.messages ?? []) as StoredMessageRow[]),
+        ...pageInfoOf(data),
+    };
+}
+
+// Older windows prepend above the visible transcript; a failed page leaves it
+// untouched. Module scope, not a useCallback inside useChat: hook-level
+// callbacks are numbered into the complexity baseline, and inserting one
+// renumbers every callback after it. Reads the store directly so no component
+// effect is involved. Only reachable while a window with a cursor is on
+// screen, which private mode never sets.
+export async function loadOlderMessages(): Promise<void> {
+    const state = useChatStore.getState();
+    const cursor = state.page?.prevCursor;
+    if (!state.conversationId || !cursor) return;
+    try {
+        const older = await fetchOlderPage(state.conversationId, cursor);
+        const current = useChatStore.getState();
+        current.setMessages([...older.messages, ...current.messages]);
+        current.setPage({ hasMorePrev: older.hasMorePrev, prevCursor: older.prevCursor });
+    } catch (err) {
+        console.error("Failed to load older messages:", err);
+    }
+}
+
+/**
+ * Private mode never touches the database, so the only history the provider can
+ * see is what this request carries. The route already forwards the whole
+ * `messages` array when privateMode is set (src/app/api/chat/route.ts:160-162)
+ * and prepareMessages does the context trimming -- it was the client that sent
+ * one message and made every private turn a fresh conversation.
+ */
+function buildTranscript(messages: TranscriptMessage[], userMessage: string, privateMode: boolean): TranscriptMessage[] {
+    if (!privateMode) return [{ role: "user", content: userMessage }];
+    // Newest wins: the request schema rejects the whole array past
+    // CHAT_MAX_REQUEST_MESSAGES, so an unbounded transcript does not grow
+    // forever -- at turn ~100 every send starts failing with a 400 and the
+    // private chat becomes unusable mid-session. Room is left for the message
+    // being added now.
+    return [
+        ...messages
+            .filter((message) => message.content.trim() !== "")
+            .slice(-(CHAT_MAX_REQUEST_MESSAGES - 1))
+            .map((message) => ({ role: message.role, content: message.content })),
+        { role: "user", content: userMessage },
+    ];
+}
+
+/**
+ * The route appends a stream failure after this marker. It belongs in the error
+ * channel, not in the assistant message: kept as message text it would be shown
+ * as though the model wrote it and, in private mode, replayed to the provider on
+ * every later turn.
+ */
+function splitStreamNotice(text: string): { answer: string; notice: string | null } {
+    const at = text.indexOf(STREAM_ERROR_MARKER);
+    if (at < 0) return { answer: text, notice: null };
+    return {
+        answer: text.slice(0, at).trimEnd(),
+        notice: text.slice(at + STREAM_ERROR_MARKER.length).trim(),
+    };
+}
+
+/**
+ * The route segment owns the conversation id on /chat/[id]; the store owns it on
+ * /chat. Reading only the store meant a message sent before loadConversation()
+ * resolved went to whichever conversation the store was still holding -- or
+ * started a second one -- while the URL said otherwise.
+ */
+function pickConversationId(
+    fromRoute: string | null | undefined,
+    fromStore: string | null
+): string | null {
+    return fromRoute ?? fromStore;
+}
+
+// The server answers the id the client named: it must exist and belong to the
+// caller, never silently forked. When it does not, the id sitting in the store
+// is stale (deleted in another tab, database reset) and every later turn would
+// 404 the same way -- so the id is dropped and the kept user message sends
+// fresh on the next try, instead of dead-ending the composer until a reload.
+const STALE_CONVERSATION_MESSAGE = "Conversation not found";
+
+function reportSendError(
+    err: unknown,
+    report: {
+        setError: (message: string | null) => void;
+        dropConversation: () => void;
+        removeMessage: (id: string) => void;
+        assistantMsgId: string;
+        onError?: (error: Error) => void;
+    }
+): void {
+    console.error("Chat error:", err);
+    const message = err instanceof Error ? err.message : "An error occurred";
+    if (message === STALE_CONVERSATION_MESSAGE) {
+        report.dropConversation();
+        report.setError("That conversation is gone. Send again to start a fresh one.");
+    } else {
+        report.setError(message);
+    }
+    report.onError?.(err as Error);
+    report.removeMessage(report.assistantMsgId);
+}
+
 export function useChat(options: UseOmniChatOptions = {}) {
     const {
+        conversationId: conversationIdProp,
         projectId,
         systemPrompt,
         privateMode = false,
@@ -41,18 +204,24 @@ export function useChat(options: UseOmniChatOptions = {}) {
     const {
         providerId,
         modelId,
-        conversationId,
+        conversationId: storedConversationId,
         setConversationId,
         setConversationTitle,
         messages,
         setMessages,
         addMessage,
         removeMessage,
-        updateLastMessage,
+        updateMessage,
     } = useChatStore();
+
+    // The route segment owns the conversation id on /chat/[id]; the store owns
+    // it on /chat. handleSubmit's dependency list carries this value, so the
+    // closure is always current and no ref is needed to read it later.
+    const conversationId = pickConversationId(conversationIdProp, storedConversationId);
 
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
+    const [isHistoryLoading, setIsHistoryLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const abortControllerRef = useRef<AbortController | null>(null);
     const currentAssistantMsgIdRef = useRef<string | null>(null);
@@ -67,6 +236,8 @@ export function useChat(options: UseOmniChatOptions = {}) {
             // Create user message
             const userMessage = input.trim();
             setInput("");
+
+            const transcript = buildTranscript(messages, userMessage, privateMode);
 
             // Add user message to store
             addMessage({
@@ -100,7 +271,7 @@ export function useChat(options: UseOmniChatOptions = {}) {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                        messages: [{ role: "user", content: userMessage }],
+                        messages: transcript,
                         providerId,
                         modelId,
                         conversationId: privateMode ? undefined : conversationId,
@@ -114,8 +285,18 @@ export function useChat(options: UseOmniChatOptions = {}) {
                 });
 
                 if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error || "Failed to send message");
+                    // Error bodies are not guaranteed to be JSON (proxies,
+                    // 5xx HTML pages); never let parsing mask the real error.
+                    let message = `Failed to send message (${response.status})`;
+                    try {
+                        const errorData = await response.json();
+                        if (typeof errorData?.error === "string") {
+                            message = errorData.error;
+                        }
+                    } catch {
+                        // keep the status-based message
+                    }
+                    throw new Error(message);
                 }
 
                 // Get conversation ID from response header
@@ -142,33 +323,44 @@ export function useChat(options: UseOmniChatOptions = {}) {
                     accumulatedContent += chunk;
                     accumulatedContentRef.current = accumulatedContent;
 
-                    // Update the assistant message with streamed content
-                    updateLastMessage(accumulatedContent);
+                    // Update THIS turn's assistant message by id. If the
+                    // user switched conversations mid-stream the message is
+                    // gone and the update is a safe no-op instead of
+                    // overwriting another conversation's last message.
+                    // The marker and whatever follows it are never shown as
+                    // answer text, so they cannot flash before the split below.
+                    updateMessage(assistantMsgId, splitStreamNotice(accumulatedContent).answer);
                 }
 
-                // Update with final content
-                updateLastMessage(accumulatedContent);
+                // Final pass: the answer and an appended stream failure are
+                // different things and belong in different channels -- the
+                // message body and the error banner.
+                const { answer, notice } = splitStreamNotice(accumulatedContent);
+                updateMessage(assistantMsgId, answer);
+                setError(notice);
 
                 if (newConversationId && !privateMode) {
                     onComplete?.(newConversationId);
                 }
             } catch (err: unknown) {
                 if (err instanceof Error && err.name === "AbortError") {
-                    // User cancelled the request
-                    // If there's partial content, keep it; otherwise remove the empty message
-                    if (accumulatedContentRef.current.trim() === "" && currentAssistantMsgIdRef.current) {
+                    // User cancelled the request. Keep the partial answer; drop
+                    // the empty message -- where "empty" means no answer text,
+                    // ignoring a notice that may have arrived with the abort.
+                    if (splitStreamNotice(accumulatedContentRef.current).answer.trim() === ""
+                        && currentAssistantMsgIdRef.current) {
                         removeMessage(currentAssistantMsgIdRef.current);
                     }
                     return;
                 }
 
-                console.error("Chat error:", err);
-                const errorMessage = err instanceof Error ? err.message : "An error occurred";
-                setError(errorMessage);
-                onError?.(err as Error);
-
-                // Remove the empty assistant message on error
-                removeMessage(assistantMsgId);
+                reportSendError(err, {
+                    setError,
+                    dropConversation: () => setConversationId(null),
+                    removeMessage,
+                    assistantMsgId,
+                    onError,
+                });
             } finally {
                 setIsLoading(false);
                 abortControllerRef.current = null;
@@ -179,6 +371,7 @@ export function useChat(options: UseOmniChatOptions = {}) {
         [
             input,
             isLoading,
+            messages,
             providerId,
             modelId,
             conversationId,
@@ -188,7 +381,7 @@ export function useChat(options: UseOmniChatOptions = {}) {
             temperature,
             maxTokens,
             addMessage,
-            updateLastMessage,
+            updateMessage,
             setConversationId,
             removeMessage,
             onComplete,
@@ -212,32 +405,38 @@ export function useChat(options: UseOmniChatOptions = {}) {
         setError(null);
     }, [setMessages, setConversationId, setConversationTitle]);
 
-    // Load existing conversation
+    // Load existing conversation: the latest window, not the whole transcript.
+    // Threads past one page show "Load older messages" instead of paying the
+    // full history cost up front; sending still works off server-side history.
+    // The window lives in the store next to the messages, so no effect in any
+    // component has to synchronize the two (and a fresh canvas clears both).
     const loadConversation = useCallback(
-        async (id: string) => {
+        async (id: string): Promise<void> => {
+            setIsHistoryLoading(true);
             try {
-                const response = await fetch(`/api/conversations/${id}`);
+                const response = await fetch(
+                    `/api/conversations/${id}?limit=${DEFAULT_MESSAGE_PAGE_SIZE}`
+                );
                 if (!response.ok) throw new Error("Failed to load conversation");
 
                 const data = await response.json();
-                const loadedMessages: Message[] = data.messages.map((m: { id: string; role: string; content: string; modelId?: string; providerId?: string; tokenCount?: number; createdAt: string }) => ({
-                    id: m.id,
-                    role: m.role,
-                    content: m.content,
-                    modelId: m.modelId,
-                    providerId: m.providerId,
-                    tokenCount: m.tokenCount,
-                    createdAt: m.createdAt,
-                }));
+                const loadedMessages = toStoreMessages(data.messages as StoredMessageRow[]);
 
                 setMessages(loadedMessages);
                 setConversationId(id);
                 setConversationTitle(data.title);
+                useChatStore.getState().setPage(pageInfoOf(data));
             } catch (err) {
+                // Surface the failure instead of silently showing an empty
+                // or stale transcript.
                 console.error("Failed to load conversation:", err);
+                setError("Failed to load conversation");
+                onError?.(err as Error);
+            } finally {
+                setIsHistoryLoading(false);
             }
         },
-        [setMessages, setConversationId, setConversationTitle]
+        [setMessages, setConversationId, setConversationTitle, onError]
     );
 
     // Handle input change
@@ -253,6 +452,7 @@ export function useChat(options: UseOmniChatOptions = {}) {
         messages,
         input,
         isLoading,
+        isHistoryLoading,
         error,
         conversationId,
 

@@ -5,8 +5,8 @@
 
 "use client";
 
-import { useEffect, useRef } from "react";
-import { useChat } from "@/hooks/useChat";
+import { useCallback, useEffect, useRef } from "react";
+import { useChat, loadOlderMessages } from "@/hooks/useChat";
 import { usePreferences } from "@/hooks/usePreferences";
 import { MessageList } from "./MessageList";
 import { ChatInput } from "./ChatInput";
@@ -23,13 +23,34 @@ interface ChatContainerProps {
 
 export function ChatContainer({ conversationId, className }: ChatContainerProps) {
     const { preferences } = usePreferences();
-    const { providerId, modelId, activeProjectId, setModel, messages: storeMessages } = useChatStore();
+    const {
+        providerId, modelId, activeProjectId, setModel, bumpListVersion,
+        messages: storeMessages,
+    } = useChatStore();
     const privateChatMode = usePersonalizationStore((state) => state.privateChatMode);
     const hasAppliedDefaults = useRef(false);
+    // A conversation is announced to the sidebar exactly once: the first turn
+    // that creates it. Without this the list is only visible after a reload.
+    const announcedConversationId = useRef<string | null>(null);
+    const handleTurnComplete = useCallback((id: string) => {
+        if (announcedConversationId.current === id) {
+            return;
+        }
+        announcedConversationId.current = id;
+        bumpListVersion();
+    }, [bumpListVersion]);
+    // Stable identity: loadConversation closes over this, and the load effect
+    // keys on loadConversation. An inline closure would be a new function every
+    // render, re-running the load on every render — a fetch storm (measured:
+    // ~90 identical transcript reads opening one thread).
+    const handleChatError = useCallback((err: Error) => {
+        console.error("Chat error:", err);
+    }, []);
     const {
         messages,
         input,
         isLoading,
+        isHistoryLoading,
         error,
         handleInputChange,
         handleSubmit,
@@ -40,9 +61,8 @@ export function ChatContainer({ conversationId, className }: ChatContainerProps)
         projectId: activeProjectId,
         systemPrompt: preferences?.defaultSystemPrompt,
         privateMode: privateChatMode,
-        onError: (err) => {
-            console.error("Chat error:", err);
-        },
+        onComplete: handleTurnComplete,
+        onError: handleChatError,
     });
 
     useEffect(() => {
@@ -81,7 +101,7 @@ export function ChatContainer({ conversationId, className }: ChatContainerProps)
     }, [conversationId, loadConversation, privateChatMode]);
 
     return (
-        <div className={cn("flex min-h-0 flex-1 flex-col", className)}>
+        <main className={cn("flex min-h-0 flex-1 flex-col", className)}>
             {privateChatMode ? (
                 <div className="flex-shrink-0 px-4 pt-4">
                     <Alert className="border-border/70 bg-background/35">
@@ -112,7 +132,9 @@ export function ChatContainer({ conversationId, className }: ChatContainerProps)
                 <MessageList
                     messages={messages}
                     isLoading={isLoading}
+                    isInitialLoading={isHistoryLoading}
                     showTokenCount={preferences?.showTokenCount ?? false}
+                    onLoadOlder={loadOlderMessages}
                 />
             </div>
 
@@ -127,6 +149,6 @@ export function ChatContainer({ conversationId, className }: ChatContainerProps)
                     onStop={handleStop}
                 />
             </div>
-        </div>
+        </main>
     );
 }

@@ -9,7 +9,7 @@ services:
     dockerfilePath: ./Dockerfile
     dockerContext: .
     plan: starter
-    healthCheckPath: /api/providers
+    healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production
@@ -21,8 +21,25 @@ services:
         generateValue: true
       - key: ENCRYPTION_SECRET_KEY
         generateValue: true
+      # The public URL of this service. A blueprint cannot interpolate a
+      # service's own URL, and a hardcoded omnichat.onrender.com silently
+      # redirects every real deployment to a host nobody owns - so these are
+      # sync:false and must be set in the Render dashboard (Settings >
+      # Environment Variables) to the SAME public origin, e.g.
+      # https://omnichat.example.com. NEXTAUTH_URL alone does not satisfy
+      # Auth.js trustHost, and the CSRF guard compares Origin verbatim against
+      # APP_ORIGIN, so APP_ORIGIN is required, not optional.
       - key: NEXTAUTH_URL
-        value: https://omnichat.onrender.com
+        sync: false
+      - key: APP_ORIGIN
+        sync: false
+      # Render runs one web instance, so the in-memory limiter is sufficient.
+      # Production otherwise resolves to redis-rest and fails closed without
+      # Upstash credentials - which would refuse every sign-in. Set
+      # RATE_LIMIT_BACKEND=redis-rest plus the UPSTASH_* vars only for a
+      # multi-instance plan.
+      - key: RATE_LIMIT_BACKEND
+        value: memory
 
 # PostgreSQL Database
 databases:

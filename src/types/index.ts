@@ -60,31 +60,6 @@ export interface Message {
     createdAt: Date;
 }
 
-export interface Folder {
-    id: string;
-    userId: string;
-    name: string;
-    color?: string | null;
-    parentId?: string | null;
-}
-
-export interface Tag {
-    id: string;
-    userId: string;
-    name: string;
-    color?: string | null;
-}
-
-export interface ConversationTag {
-    conversationId: string;
-    tagId: string;
-}
-
-export interface ConversationFolder {
-    conversationId: string;
-    folderId: string;
-}
-
 export type ModelCapability =
     | "text"
     | "vision"
@@ -114,7 +89,6 @@ export interface ProviderDefinition {
     icon: string;
     website: string;
     keyPlaceholder: string;
-    keyPattern: RegExp;
     docsUrl: string;
     supportsStreaming: boolean;
     models: ModelDefinition[];

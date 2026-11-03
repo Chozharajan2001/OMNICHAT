@@ -20,6 +20,12 @@
 # production
 /build
 
+# database files (generated at runtime, never tracked)
+*.db
+*.db-journal
+*.sqlite
+*.sqlite-journal
+
 # misc
 .DS_Store
 *.pem
@@ -32,12 +38,22 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
 
+# Qoder agent/IDE output (harness reports, canvases) — not app source
+/.qoder
+
 # typescript
 *.tsbuildinfo
+
+# tauri / rust (build outputs and staged runtimes, never tracked)
+src-tauri/target/
+src-tauri/staging/
+src-tauri/.node-runtime/
+src-tauri/gen/
 next-env.d.ts
 
 /src/generated/prisma
